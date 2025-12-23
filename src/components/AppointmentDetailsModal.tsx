@@ -5,6 +5,7 @@ interface AppointmentDetails {
     appointment: Appointment;
     prescription: {
         notes: string;
+        diagnosis?: string;
     } | null;
     items: {
         id: string;
@@ -75,6 +76,19 @@ const AppointmentDetailsModal: React.FC<{
                                 {details!.appointment.status}
                             </span>
                         </div>
+
+                        {/* Diagnosis */}
+                        {details!.prescription?.diagnosis && (
+                            <div className="bg-red-50 p-4 rounded-lg border border-red-100">
+                                <h4 className="font-bold text-sm text-red-800 mb-2 flex items-center gap-2">
+                                    <span className="material-symbols-outlined text-base">person_alert</span>
+                                    Queixa / Diagnóstico
+                                </h4>
+                                <p className="text-sm text-text-main whitespace-pre-wrap leading-relaxed">
+                                    {details!.prescription.diagnosis}
+                                </p>
+                            </div>
+                        )}
 
                         {/* Notes */}
                         {details!.prescription && (

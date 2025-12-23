@@ -9,7 +9,7 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 // Login Route
 app.post('/api/login', async (req, res) => {
@@ -57,7 +57,15 @@ app.get('/api/patients', async (req, res) => {
                 EXTRACT(YEAR FROM AGE(p.dob)) as age, 
                 p.dob, 
                 p.village, 
-                ps.label as status, 
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 FROM appointments a 
+                        WHERE a.patient_id = p.id 
+                        AND a.date::date = CURRENT_DATE 
+                        AND a.status = 'Agendada'
+                    ) THEN 'Aguardando'
+                    ELSE ps.label 
+                END as status, 
                 p.image_url as image 
             FROM patients p
             LEFT JOIN patient_statuses ps ON p.status_id = ps.id
@@ -93,7 +101,15 @@ app.get('/api/patients/:id', async (req, res) => {
                 p.dob, 
                 p.village, 
                 p.ethnicity,
-                ps.label as status, 
+                CASE 
+                    WHEN EXISTS (
+                        SELECT 1 FROM appointments a 
+                        WHERE a.patient_id = p.id 
+                        AND a.date::date = CURRENT_DATE 
+                        AND a.status = 'Agendada'
+                    ) THEN 'Aguardando'
+                    ELSE ps.label 
+                END as status, 
                 p.image_url as image,
                 p.cns,
                 p.cpf,
@@ -133,9 +149,17 @@ app.get('/api/patients/:id/appointments', async (req, res) => {
                 a.date, 
                 a.reason, 
                 a.notes, 
-                a.status 
+                a.status,
+                pr.diagnosis,
+                pr.id as "prescriptionId",
+                (
+                    SELECT json_agg(json_build_object('name', pi.name, 'dosage', pi.dosage, 'frequency', pi.frequency, 'type', pi.type))
+                    FROM prescription_items pi
+                    WHERE pi.prescription_id = pr.id
+                ) as "prescriptionItems"
             FROM appointments a
             LEFT JOIN users u ON a.doctor_id = u.id
+            LEFT JOIN prescriptions pr ON a.id = pr.appointment_id
             WHERE a.patient_id = $1
             ORDER BY a.date DESC
         `;
@@ -227,7 +251,7 @@ app.put('/api/appointments/:id', async (req, res) => {
 });
 
 app.post('/api/prescriptions', async (req, res) => {
-    const { appointmentId, doctorId, items, notes } = req.body;
+    const { appointmentId, doctorId, items, notes, diagnosis } = req.body;
 
     const client = await pool.connect();
 
@@ -236,9 +260,9 @@ app.post('/api/prescriptions', async (req, res) => {
 
         // 1. Create Prescription
         const prescriptionRes = await client.query(
-            `INSERT INTO prescriptions (appointment_id, doctor_id, notes) 
-             VALUES ($1, $2, $3) RETURNING id`,
-            [appointmentId, doctorId, notes]
+            `INSERT INTO prescriptions (appointment_id, doctor_id, notes, diagnosis) 
+             VALUES ($1, $2, $3, $4) RETURNING id`,
+            [appointmentId, doctorId, notes, diagnosis]
         );
         const prescriptionId = prescriptionRes.rows[0].id;
 
@@ -246,9 +270,19 @@ app.post('/api/prescriptions', async (req, res) => {
         if (items && Array.isArray(items)) {
             for (const item of items) {
                 await client.query(
-                    `INSERT INTO prescription_items (prescription_id, type, name, dosage, frequency, duration, end_date)
-                     VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-                    [prescriptionId, item.type, item.name, item.dosage, item.frequency, item.duration || null, item.endDate || null]
+                    `INSERT INTO prescription_items (prescription_id, type, name, dosage, frequency, duration, end_date, treatment_id, plant_id)
+                     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+                    [
+                        prescriptionId,
+                        item.type,
+                        item.name,
+                        item.dosage,
+                        item.frequency,
+                        item.duration || null,
+                        item.endDate || null,
+                        item.treatmentDetails?.id || null,
+                        item.plantDetails?.id || null
+                    ]
                 );
             }
         }
@@ -371,10 +405,36 @@ app.get('/api/appointments/:id/details', async (req, res) => {
         if (prescriptionRes.rows.length > 0) {
             prescription = prescriptionRes.rows[0];
             const itemsRes = await query(
-                `SELECT * FROM prescription_items WHERE prescription_id = $1`,
+                `SELECT 
+                    pi.*,
+                    row_to_json(t.*) as treatment_details,
+                    row_to_json(pl.*) as plant_details
+                 FROM prescription_items pi
+                 LEFT JOIN treatments t ON pi.treatment_id = t.id
+                 LEFT JOIN plants pl ON pi.plant_id = pl.id
+                 WHERE pi.prescription_id = $1`,
                 [prescription.id]
             );
-            items = itemsRes.rows;
+            items = itemsRes.rows.map(row => ({
+                ...row,
+                treatmentDetails: row.treatment_details ? {
+                    id: row.treatment_details.id,
+                    name: row.treatment_details.name,
+                    origin: row.treatment_details.origin,
+                    ingredients: row.treatment_details.ingredients, // Ensure JSON is parsed if needed, but pg usually handles row_to_json well
+                    preparationMethod: row.treatment_details.preparation_method,
+                    sideEffects: row.treatment_details.side_effects,
+                    // Map other needed fields if necessary
+                } : undefined,
+                plantDetails: row.plant_details ? {
+                    id: row.plant_details.id,
+                    name: row.plant_details.name,
+                    scientificName: row.plant_details.scientific_name,
+                    preparation: row.plant_details.preparation,
+                    contraindications: row.plant_details.contraindications
+                    // Map other needed fields if necessary
+                } : undefined
+            }));
         }
 
         res.json({
@@ -395,7 +455,7 @@ app.get('/api/appointments/:id/details', async (req, res) => {
 
 
 app.post('/api/patients', async (req, res) => {
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image } = req.body;
 
     // Basic validation
     if (!name || !village) {
@@ -411,9 +471,8 @@ app.post('/api/patients', async (req, res) => {
             statusId = statusRes.rows[0].id;
         }
 
-        // Generate placeholder image if none provided
-        // Use a generated initials avatar service or similar placeholder
-        const imageUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
+        // Use provided image or generate placeholder
+        const imageUrl = image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
 
         const text = `
             INSERT INTO patients (name, dob, village, ethnicity, cns, mother_name, status_id, image_url, indigenous_name, cpf, blood_type, allergies, conditions)
@@ -433,21 +492,146 @@ app.post('/api/patients', async (req, res) => {
 
 app.put('/api/patients/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image } = req.body;
 
     try {
-        const text = `
+        let text = `
             UPDATE patients 
             SET name = $1, dob = $2, village = $3, ethnicity = $4, cns = $5, mother_name = $6, indigenous_name = $7, cpf = $8, blood_type = $9, allergies = $10, conditions = $11, updated_at = NOW()
-            WHERE id = $12
         `;
-        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, id];
+        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null];
+        let paramIndex = 12;
+
+        if (image) {
+            text += `, image_url = $${paramIndex}`;
+            values.push(image);
+            paramIndex++;
+        }
+
+        text += ` WHERE id = $${paramIndex}`;
+        values.push(id);
 
         await query(text, values);
         res.json({ success: true });
 
     } catch (error) {
         console.error('Update patient error:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Pharmacy Routes
+app.get('/api/pharmacy/plants', async (req, res) => {
+    try {
+        const result = await query('SELECT * FROM plants ORDER BY name ASC');
+        const plants = result.rows.map(p => ({
+            id: p.id,
+            name: p.name,
+            scientificName: p.scientific_name,
+            indigenousName: p.indigenous_name,
+            description: p.description,
+            mainUse: p.main_use,
+            usageParts: p.usage_parts,
+            indications: p.indications,
+            preparation: p.preparation,
+            dosage: p.dosage,
+            contraindications: p.contraindications,
+            cultivation: p.cultivation_info,
+            image: p.image_url
+        }));
+        res.json({ success: true, plants });
+    } catch (error) {
+        console.error('Error fetching plants:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+app.get('/api/pharmacy/treatments', async (req, res) => {
+    try {
+        const result = await query('SELECT * FROM treatments ORDER BY name ASC');
+        const treatments = result.rows.map(t => ({
+            id: t.id,
+            name: t.name,
+            origin: t.origin,
+            indications: t.indications,
+            ingredients: t.ingredients,
+            preparationMethod: t.preparation_method,
+            duration: t.duration,
+            frequency: t.frequency,
+            sideEffects: t.side_effects,
+            notes: t.notes
+        }));
+        res.json({ success: true, treatments });
+    } catch (error) {
+        console.error('Error fetching treatments:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+app.post('/api/pharmacy/plants', async (req, res) => {
+    const { name, scientificName, indigenousName, description, mainUse, usageParts, indications, preparation, dosage, contraindications, cultivation, image } = req.body;
+
+    // Basic validation
+    if (!name) {
+        res.status(400).json({ success: false, message: 'Name is required' });
+        return;
+    }
+
+    try {
+        const text = `
+            INSERT INTO plants (name, scientific_name, indigenous_name, description, main_use, usage_parts, indications, preparation, dosage, contraindications, cultivation_info, image_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+            RETURNING id
+        `;
+        const values = [name, scientificName, indigenousName, description, mainUse, JSON.stringify(usageParts || []), indications, preparation, dosage, contraindications, JSON.stringify(cultivation || {}), image];
+
+        const result = await query(text, values);
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (error) {
+        console.error('Error creating plant:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+app.post('/api/pharmacy/treatments', async (req, res) => {
+    const { name, origin, indications, ingredients, preparationMethod, duration, frequency, sideEffects, notes } = req.body;
+
+    if (!name) {
+        res.status(400).json({ success: false, message: 'Name is required' });
+        return;
+    }
+
+    try {
+        const text = `
+            INSERT INTO treatments (name, origin, indications, ingredients, preparation_method, duration, frequency, side_effects, notes)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id
+        `;
+        const values = [name, origin, indications, JSON.stringify(ingredients || []), preparationMethod, duration, frequency, sideEffects, notes];
+
+        const result = await query(text, values);
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (error) {
+        console.error('Error creating treatment:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Dashboard Stats Route
+app.get('/api/dashboard/stats', async (req, res) => {
+    try {
+        const treatmentsRes = await query('SELECT COUNT(*) FROM treatments');
+        const prescriptionsRes = await query('SELECT COUNT(*) FROM prescriptions');
+        const patientsRes = await query('SELECT COUNT(*) FROM patients');
+
+        res.json({
+            success: true,
+            treatmentsCount: parseInt(treatmentsRes.rows[0].count, 10),
+            prescriptionsCount: parseInt(prescriptionsRes.rows[0].count, 10),
+            patientsCount: parseInt(patientsRes.rows[0].count, 10)
+        });
+    } catch (error) {
+        console.error('Error fetching dashboard stats:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });

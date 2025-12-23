@@ -1,14 +1,20 @@
-import React from 'react';
-import { Screen } from '../types';
+import { Screen, User } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
   currentScreen: Screen;
   onNavigate: (screen: Screen) => void;
   onLogout: () => void;
+  user: User | null;
 }
 
-const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, onLogout }) => {
+const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, onLogout, user }) => {
+  // ... (existing code)
+
+  // SKIP TO FOOTER REPLACEMENT
+  // Note: Since I cannot actually skip in replacement, I will target the exact block for the footer.
+  // Let's split this into two replacements if needed, or just replace the whole Layout definition start and footer.
+
   // If login screen, render without layout
   if (currentScreen === Screen.LOGIN) {
     return <>{children}</>;
@@ -63,13 +69,19 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
           {/* User Profile Footer */}
           <div className="px-2 py-4 border-t border-border-light">
             <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-background-light cursor-pointer transition-colors" onClick={onLogout}>
-              <div
-                className="bg-center bg-no-repeat bg-cover rounded-full size-8 ring-2 ring-primary/30"
-                style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuCuO4qDRBUEnOdmCSjy3TEZsgjJDWaK9Cb4ebIPtI4mjvYXJJdpdBllKmL8xIOss2QXgo2zvsVjnhozqHffDUOZEGY1RCViF5XzTen39NQyQnboOhExUqpTrInvUnG0oO9Gar0xbu8f-PST5uVTuipIRRw_LZqvhcw8KXKgLYQdmL2koFnWtDwG26t2E3EL9DQ4ezIq6iljs7zsE9_HpEpWmFAC7zfpLKKH3uoiGBfOqhM9lGSyRh2WO_VZDm3jPWiGhkcscH1xfxM")' }}
-              />
+              {user?.image ? (
+                <div
+                  className="bg-center bg-no-repeat bg-cover rounded-full size-8 ring-2 ring-primary/30"
+                  style={{ backgroundImage: `url("${user.image}")` }}
+                />
+              ) : (
+                <div className="size-8 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold ring-2 ring-primary/30">
+                  {user?.name?.substring(0, 2).toUpperCase() || 'Dr'}
+                </div>
+              )}
               <div className="flex flex-col overflow-hidden">
-                <p className="text-text-main text-sm font-medium leading-none truncate">Dr. Yawalapiti</p>
-                <p className="text-text-muted text-xs font-normal leading-normal truncate mt-1">Curador Chefe</p>
+                <p className="text-text-main text-sm font-medium leading-none truncate">{user?.name || 'Profissional'}</p>
+                <p className="text-text-muted text-xs font-normal leading-normal truncate mt-1">{user?.specialty || user?.role || 'Clinico Geral'}</p>
               </div>
               <span className="material-symbols-outlined text-text-muted ml-auto text-[20px]">logout</span>
             </div>

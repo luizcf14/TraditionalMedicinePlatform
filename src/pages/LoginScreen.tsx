@@ -1,7 +1,9 @@
 import React from 'react';
 
+import { User } from '../types';
+
 interface LoginScreenProps {
-  onLogin: () => void;
+  onLogin: (user: User) => void;
 }
 
 const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
@@ -27,7 +29,8 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
       if (data.success) {
         // Here you would typically save the token/user info
         console.log('Login successful:', data.user);
-        onLogin();
+        console.log('Login successful:', data.user);
+        onLogin(data.user);
       } else {
         setError(data.message || 'Falha no login');
       }

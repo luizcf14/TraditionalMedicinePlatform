@@ -1,5 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Screen, Patient } from '../types';
+import { createPortal } from 'react-dom';
+import { Screen, Patient, Plant, Treatment } from '../types';
+import PrescriptionDocument from '../components/PrescriptionDocument';
 
 interface PrescriptionScreenProps {
   onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -15,6 +17,8 @@ interface PrescriptionItemState {
   frequency: string;
   duration?: string;
   endDate?: string;
+  treatmentDetails?: Treatment;
+  plantDetails?: Plant;
 }
 
 const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, patientId, appointmentId }) => {
@@ -22,6 +26,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
   const [patient, setPatient] = useState<Patient | null>(null);
   const [items, setItems] = useState<PrescriptionItemState[]>([]);
   const [notes, setNotes] = useState('');
+  const [diagnosis, setDiagnosis] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
   // Chronic Conditions Edit State
@@ -40,6 +45,43 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
 
   // History State
   const [history, setHistory] = useState<any[]>([]);
+
+  // Pharmacy Integration State
+  const [pharmacyItems, setPharmacyItems] = useState<(Plant | Treatment)[]>([]);
+  const [isPharmacyModalOpen, setIsPharmacyModalOpen] = useState(false);
+  const [selectedPharmacyItem, setSelectedPharmacyItem] = useState<Plant | Treatment | null>(null);
+
+  useEffect(() => {
+    // Fetch Pharmacy Data
+    const fetchPharmacy = async () => {
+      try {
+        const [plantsRes, treatmentsRes] = await Promise.all([
+          fetch('http://localhost:3001/api/pharmacy/plants'),
+          fetch('http://localhost:3001/api/pharmacy/treatments')
+        ]);
+        const plantsData = await plantsRes.json();
+        const treatmentsData = await treatmentsRes.json();
+
+        let allItems: (Plant | Treatment)[] = [];
+        if (plantsData.success) allItems = [...allItems, ...plantsData.plants];
+        if (treatmentsData.success) allItems = [...allItems, ...treatmentsData.treatments];
+
+        setPharmacyItems(allItems.sort((a, b) => {
+          // Prioritize Treatments (items without scientificName)
+          const isPlantA = 'scientificName' in a;
+          const isPlantB = 'scientificName' in b;
+
+          if (isPlantA && !isPlantB) return 1; // Plant comes after Treatment
+          if (!isPlantA && isPlantB) return -1; // Treatment comes before Plant
+
+          return a.name.localeCompare(b.name);
+        }));
+      } catch (err) {
+        console.error("Error fetching pharmacy:", err);
+      }
+    };
+    fetchPharmacy();
+  }, []);
 
   const fetchHistory = () => {
     if (!patientId) return;
@@ -76,8 +118,58 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     }
   }, [patientId]);
 
+  /* Removed duplicate isSaving */
+  const [isReadOnly, setIsReadOnly] = useState(false);
+
+  // ... (existing code) ...
+
+  // Fetch Existing Prescription (Reprint Mode)
+  useEffect(() => {
+    if (appointmentId) {
+      console.log('Fetching existing prescription for appointment:', appointmentId);
+      setIsSaving(true); // Show loading state
+      fetch(`http://localhost:3001/api/appointments/${appointmentId}/details`)
+        .then(res => res.json())
+        .then(data => {
+          console.log("Appointment details loaded:", data);
+          if (data.success) {
+            // If a prescription exists, we are in Read-Only / Reprint mode
+            if (data.prescription) {
+              setIsReadOnly(true);
+              setNotes(data.prescription.notes || '');
+              setDiagnosis(data.prescription.diagnosis || '');
+            } else {
+              setIsReadOnly(false);
+            }
+
+            if (data.items && data.items.length > 0) {
+              setItems(data.items.map((i: any) => ({
+                id: i.id || Date.now().toString(),
+                type: i.type,
+                name: i.name,
+                dosage: i.dosage,
+                frequency: i.frequency,
+                duration: i.duration,
+                endDate: i.end_date,
+                treatmentDetails: i.treatmentDetails,
+                plantDetails: i.plantDetails
+              })));
+            }
+          }
+        })
+        .catch(err => console.error("Error loading appointment details:", err))
+        .finally(() => setIsSaving(false));
+    } else {
+      setIsReadOnly(false);
+    }
+  }, [appointmentId]);
+
   const handleAddItem = () => {
+    console.log("Adding item. SelectedPharmacyItem:", selectedPharmacyItem);
     if (!newItemName || !newItemDosage || !newItemFrequency) return;
+
+    const isPlant = selectedPharmacyItem && 'scientificName' in selectedPharmacyItem;
+    console.log("Is Plant condition:", isPlant, "Has scientificName:", selectedPharmacyItem && 'scientificName' in selectedPharmacyItem);
 
     const newItem: PrescriptionItemState = {
       id: Date.now().toString(),
@@ -86,7 +178,9 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       dosage: newItemDosage,
       frequency: newItemFrequency,
       duration: newItemDuration,
-      endDate: newItemEndDate
+      endDate: newItemEndDate,
+      treatmentDetails: (selectedPharmacyItem && !isPlant) ? (selectedPharmacyItem as Treatment) : undefined,
+      plantDetails: (selectedPharmacyItem && isPlant) ? (selectedPharmacyItem as Plant) : undefined
     };
 
     setItems([...items, newItem]);
@@ -97,6 +191,20 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     setNewItemFrequency('');
     setNewItemDuration('');
     setNewItemEndDate('');
+    setSelectedPharmacyItem(null);
+  };
+
+  const handleSelectPharmacyItem = (item: Plant | Treatment) => {
+    setNewItemName(item.name);
+    setNewItemType('Tradicional');
+    setSelectedPharmacyItem(item);
+
+    // Auto-fill details if available (Treatments usually have these)
+    if ((item as Treatment).frequency) setNewItemFrequency((item as Treatment).frequency);
+    if ((item as Treatment).duration) setNewItemDuration((item as Treatment).duration);
+    if ((item as Plant).dosage) setNewItemDosage((item as Plant).dosage);
+
+    setIsPharmacyModalOpen(false);
   };
 
   const handleRemoveItem = (id: string) => {
@@ -133,7 +241,8 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
           appointmentId,
           doctorId: null, // Backend handles login check later, MVP uses seed
           items,
-          notes
+          notes,
+          diagnosis
         })
       });
       const data = await response.json();
@@ -231,119 +340,207 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       <style>
         {`
           @media print {
-            /* Hide everything by default */
-            body * {
-              visibility: hidden;
+            html, body {
+              overflow: visible !important;
+              height: auto !important;
             }
-            /* Show only the printable area */
-            #printable-section, #printable-section * {
-              visibility: visible;
-            }
-            #printable-section {
-              position: absolute;
-              left: 0;
-              top: 0;
-              width: 100%;
-              padding: 2cm;
-              background: white;
-            }
-            /* Hide the main layout elements explicitly */
-            nav, header, aside, .no-print {
+            /* Hide the Main App Root */
+            #root {
               display: none !important;
+            }
+            /* Style the Portal Container (direct child of body) */
+            #printable-section {
+              display: block !important;
+              position: relative !important;
+              width: 100% !important;
+              height: auto !important;
+              background: white;
+              padding: 1cm;
+              margin: 0;
+            }
+            .page-break {
+                page-break-before: always;
+                break-before: page;
+                display: block;
+                margin-top: 2rem;
+            }
+            /* Ensure visibility of children */
+            #printable-section * {
+              visibility: visible !important;
             }
           }
         `}
       </style>
 
-      {/* Printable Section (Hidden on Screen) */}
-      <div id="printable-section" className="hidden print:block">
-        {patient && (
-          <div className="flex flex-col gap-6 font-sans">
-            {/* Header */}
-            <div className="border-b-2 border-primary pb-4 flex justify-between items-end">
-              <div>
-                <h1 className="text-2xl font-bold text-primary">Prescrição Médica / Recomendação Tradicional</h1>
-                <p className="text-sm text-gray-500">Unidade de Saúde: <b>Posto de Saúde Indígena Xingu</b></p>
+      {/* Printable Section via Portal to Body */}
+      {createPortal(
+        <div id="printable-section" className="hidden print:block text-black font-sans">
+          {patient && (
+            <div className="flex flex-col gap-6">
+              {/* Header */}
+              <div className="border-b-2 border-primary pb-4 flex justify-between items-end">
+                <div>
+                  <h1 className="text-2xl font-bold text-primary">Prescrição Médica / Recomendação Tradicional</h1>
+                  <p className="text-sm text-gray-500">Unidade de Saúde: <b>Posto de Saúde Indígena Xingu</b></p>
+                </div>
+                <div className="text-right text-sm">
+                  <p>Data: {new Date().toLocaleDateString()}</p>
+                  <p>Emitido por: Dr(a). Luiz (Clínico Geral)</p>
+                </div>
               </div>
-              <div className="text-right text-sm">
-                <p>Data: {new Date().toLocaleDateString()}</p>
-                <p>Emitido por: Dr(a). Luiz (Clínico Geral)</p>
-              </div>
-            </div>
 
-            {/* Patient Info */}
-            <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
-              <h2 className="text-lg font-bold mb-2">Dados do Paciente</h2>
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <p><span className="font-semibold">Nome:</span> {patient.name}</p>
-                <p><span className="font-semibold">Aldeia:</span> {patient.village}</p>
-                <p><span className="font-semibold">Idade:</span> {patient.age} anos</p>
-                <p><span className="font-semibold">ID:</span> #{patient.id.substring(0, 6)}</p>
+              {/* Patient Info */}
+              <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
+                <h2 className="text-lg font-bold mb-2">Dados do Paciente</h2>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <p><span className="font-semibold">Nome:</span> {patient.name}</p>
+                  <p><span className="font-semibold">Aldeia:</span> {patient.village}</p>
+                  <p><span className="font-semibold">Idade:</span> {patient.age} anos</p>
+                  <p><span className="font-semibold">ID:</span> #{patient.id.substring(0, 6)}</p>
+                </div>
               </div>
-            </div>
 
-            {/* Current Prescription */}
-            <div>
-              <h2 className="text-lg font-bold mb-3 uppercase tracking-wide border-l-4 border-primary pl-2">Medicamentos & Tratamentos</h2>
-              {items.length > 0 ? (
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead>
-                    <tr className="border-b border-gray-300">
-                      <th className="py-2 font-semibold">Tipo</th>
-                      <th className="py-2 font-semibold">Nome</th>
-                      <th className="py-2 font-semibold">Dosagem</th>
-                      <th className="py-2 font-semibold">Frequência</th>
-                      <th className="py-2 font-semibold">Duração</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {items.map((item, idx) => (
-                      <tr key={idx}>
-                        <td className="py-3">{item.type}</td>
-                        <td className="py-3 font-medium">{item.name}</td>
-                        <td className="py-3">{item.dosage}</td>
-                        <td className="py-3">{item.frequency}</td>
-                        <td className="py-3">{item.duration}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="text-sm italic text-gray-500">Nenhum item prescrito.</p>
+              {/* Diagnosis (Printable) */}
+              {diagnosis && (
+                <div className="mb-4">
+                  <h2 className="text-lg font-bold mb-2 uppercase tracking-wide border-l-4 border-red-500 pl-2">Queixa / Diagnóstico</h2>
+                  <div className="bg-red-50 p-3 rounded text-sm text-gray-800 border border-red-100 italic">
+                    {diagnosis}
+                  </div>
+                </div>
               )}
-            </div>
 
-            {/* Current Notes */}
-            {notes && (
+              {/* Current Prescription */}
               <div>
-                <h2 className="text-lg font-bold mb-3 uppercase tracking-wide border-l-4 border-orange-500 pl-2">Orientações (Bahsé / Dietas)</h2>
-                <div className="bg-orange-50 p-4 rounded text-sm text-gray-800 whitespace-pre-wrap border border-orange-100 leading-relaxed">
-                  {notes}
-                </div>
+                <h2 className="text-lg font-bold mb-3 uppercase tracking-wide border-l-4 border-primary pl-2">Medicamentos & Tratamentos</h2>
+                {items.length > 0 ? (
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead>
+                      <tr className="border-b border-gray-300">
+                        <th className="py-2 font-semibold">Tipo</th>
+                        <th className="py-2 font-semibold">Nome</th>
+                        <th className="py-2 font-semibold">Dosagem</th>
+                        <th className="py-2 font-semibold">Frequência</th>
+                        <th className="py-2 font-semibold">Duração</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {items.map((item, idx) => (
+                        <tr key={idx}>
+                          <td className="py-3">{item.type}</td>
+                          <td className="py-3 font-medium">{item.name}</td>
+                          <td className="py-3">{item.dosage}</td>
+                          <td className="py-3">{item.frequency}</td>
+                          <td className="py-3">{item.duration}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p className="text-sm italic text-gray-500">Nenhum item prescrito.</p>
+                )}
               </div>
-            )}
 
-            {/* Recent History (For Context) */}
-            {history.length > 0 && (
-              <div className="mt-8 pt-6 border-t border-gray-200">
-                <h3 className="text-sm font-bold text-gray-500 mb-2 uppercase">Histórico Recente (Últimos atendimentos)</h3>
-                <div className="space-y-4">
-                  {history.map(apt => (
-                    <div key={apt.id} className="text-xs text-gray-600">
-                      <p className="font-semibold">{new Date(apt.date).toLocaleDateString()} - {apt.reason}</p>
-                      {apt.notes && <p className="italic pl-2 border-l-2 border-gray-200 mt-1">"{apt.notes}"</p>}
-                    </div>
-                  ))}
+              {/* Current Notes */}
+              {notes && (
+                <div>
+                  <h2 className="text-lg font-bold mb-3 uppercase tracking-wide border-l-4 border-orange-500 pl-2">Orientações (Bahsé / Dietas)</h2>
+                  <div className="bg-orange-50 p-4 rounded text-sm text-gray-800 whitespace-pre-wrap border border-orange-100 leading-relaxed">
+                    {notes}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
 
-            <div className="mt-12 text-center text-xs text-gray-400 border-t pt-4">
-              <p>Documento gerado eletronicamente pelo Sistema de Saúde Tradicional do Xingu.</p>
+              {/* Recent History (For Context) */}
+              {history.length > 0 && (
+                <div className="mt-8 pt-6 border-t border-gray-200">
+                  <h3 className="text-sm font-bold text-gray-500 mb-2 uppercase">Histórico Recente (Últimos atendimentos)</h3>
+                  <div className="space-y-4">
+                    {history.map(apt => (
+                      <div key={apt.id} className="text-xs text-gray-600">
+                        <p className="font-semibold">{new Date(apt.date).toLocaleDateString()} - {apt.reason}</p>
+                        {apt.notes && <p className="italic pl-2 border-l-2 border-gray-200 mt-1">"{apt.notes}"</p>}
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div className="mt-12 text-center text-xs text-gray-400 border-t pt-4">
+                <p>Documento gerado eletronicamente.</p>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+
+          {/* Detailed Treatment Guide (New Page) */}
+          {items.some(i => i.treatmentDetails || i.plantDetails) && (
+            <div className="page-break font-sans pt-8 text-black">
+              <div className="border-b-2 border-primary pb-4 mb-6">
+                <h1 className="text-2xl font-bold text-primary">Guia de Preparo e Uso</h1>
+                <p className="text-sm text-gray-500">Instruções detalhadas para os tratamentos prescritos.</p>
+              </div>
+
+              {items.filter(i => i.treatmentDetails || i.plantDetails).map((item, idx) => {
+                const treatment = item.treatmentDetails;
+                const plant = item.plantDetails;
+
+                return (
+                  <div key={idx} className="mb-8 p-6 bg-slate-50 border border-slate-200 rounded-xl">
+                    <h2 className="text-xl font-bold text-slate-900 mb-1">{item.name}</h2>
+                    {plant && <p className="text-sm text-primary italic mb-4">{plant.scientificName}</p>}
+                    {treatment && <p className="text-sm text-primary italic mb-4">Origem: {treatment.origin}</p>}
+
+                    <div className="space-y-4">
+                      {/* Ingredients */}
+                      {treatment && treatment.ingredients && treatment.ingredients.length > 0 && (
+                        <div>
+                          <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-2">Ingredientes</h3>
+                          <ul className="list-disc pl-5 text-sm text-slate-800">
+                            {treatment.ingredients.map((ing: any, i: number) => (
+                              <li key={i}><span className="font-semibold">{ing.quantity}</span> de {ing.name}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Preparation */}
+                      <div>
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-2">Modo de Preparo</h3>
+                        <p className="text-sm text-slate-800 leading-relaxed whitespace-pre-wrap">
+                          {treatment?.preparationMethod || plant?.preparation || 'Seguir orientações médicas.'}
+                        </p>
+                      </div>
+
+                      {/* Dosage */}
+                      <div>
+                        <h3 className="text-sm font-bold uppercase tracking-wider text-slate-700 mb-2">Como Usar</h3>
+                        <p className="text-sm text-slate-800">
+                          <span className="font-semibold">Posologia:</span> {item.dosage} <br />
+                          <span className="font-semibold">Frequência:</span> {item.frequency} <br />
+                          <span className="font-semibold">Duração:</span> {item.duration}
+                        </p>
+                      </div>
+
+                      {/* Warnings */}
+                      {(treatment?.sideEffects || plant?.contraindications) && (
+                        <div className="mt-4 bg-red-50 p-3 rounded border border-red-100">
+                          <h3 className="text-xs font-bold uppercase tracking-wider text-red-700 mb-1">Cuidados e Contraindicações</h3>
+                          <p className="text-sm text-red-800">
+                            {treatment?.sideEffects}
+                            {treatment?.sideEffects && plant?.contraindications && '. '}
+                            {plant?.contraindications}
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>,
+        document.body
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 no-print">
         {/* Left Column: Context (3 cols) */}
@@ -371,6 +568,13 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                     <span className="text-xs font-semibold text-primary">{new Date(apt.date).toLocaleDateString()}</span>
                     <span className="text-sm font-medium">{apt.reason}</span>
                     <span className="text-xs text-text-muted">{apt.doctorName}</span>
+                    {apt.diagnosis && (
+                      <div className="mt-1 bg-red-50 px-2 py-1 rounded border border-red-100" title={apt.diagnosis}>
+                        <p className="text-[10px] text-red-700 font-medium truncate">
+                          <span className="font-bold">Queixa:</span> {apt.diagnosis}
+                        </p>
+                      </div>
+                    )}
                   </li>
                 ))
               ) : (
@@ -509,6 +713,25 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
             )}
           </section>
 
+
+
+
+
+          {/* 1.5 Diagnosis & Complaint */}
+          <section className="bg-surface-light rounded-xl shadow-sm border border-border-light p-6">
+            <div className="flex items-center gap-2 mb-3">
+              <span className="material-symbols-outlined text-primary">person_alert</span>
+              <h3 className="text-lg font-bold text-text-main">Queixa Principal / Diagnóstico</h3>
+            </div>
+            <textarea
+              value={diagnosis}
+              onChange={(e) => setDiagnosis(e.target.value)}
+              className="w-full rounded-xl border border-border-light bg-white p-4 text-sm focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm"
+              rows={3}
+              placeholder="Descreva os sintomas, queixas do paciente ou diagnóstico identificado..."
+            />
+          </section>
+
           {/* 2. Prescription Items */}
           <section className="bg-surface-light rounded-xl shadow-sm border border-border-light flex flex-col">
             <div className="px-6 py-4 border-b border-border-light flex justify-between items-center">
@@ -547,7 +770,15 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                             {item.type}
                           </span>
                         </td>
-                        <td className="px-6 py-4 font-medium text-text-main">{item.name}</td>
+                        <td className="px-6 py-4 font-medium text-text-main">
+                          {item.name}
+                          {(item.treatmentDetails || item.plantDetails) && (
+                            <span className="ml-2 inline-flex items-center text-green-600 text-xs bg-green-50 px-1.5 py-0.5 rounded border border-green-200" title="Item vinculado à Farmácia Viva">
+                              <span className="material-symbols-outlined text-[12px] mr-1">link</span>
+                              Vinculado
+                            </span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-text-muted">{item.dosage}</td>
                         <td className="px-6 py-4 text-text-muted">{item.frequency}</td>
                         <td className="px-6 py-4 text-text-muted">
@@ -583,13 +814,47 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                 </div>
                 <div className="md:col-span-3">
                   <label className="block text-xs font-medium text-text-muted mb-1">Nome</label>
-                  <input
-                    value={newItemName}
-                    onChange={(e) => setNewItemName(e.target.value)}
-                    className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted"
-                    placeholder="Nome do Medicamento/Planta"
-                    type="text"
-                  />
+                  <div className="relative">
+                    <input
+                      value={newItemName}
+                      onChange={(e) => setNewItemName(e.target.value)}
+                      className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted pr-10"
+                      placeholder="Nome do Medicamento/Planta"
+                      type="text"
+                    />
+                    <button
+                      onClick={() => setIsPharmacyModalOpen(!isPharmacyModalOpen)}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:bg-primary/10 p-1 rounded transition-colors"
+                      title="Buscar na Farmácia Viva"
+                    >
+                      <span className="material-symbols-outlined text-[20px]">spa</span>
+                    </button>
+
+                    {isPharmacyModalOpen && (
+                      <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-xl border border-border-light z-50 max-h-60 overflow-y-auto">
+                        <div className="p-2 sticky top-0 bg-white border-b border-border-light">
+                          <p className="text-xs font-bold text-text-muted uppercase px-2">Farmácia Viva</p>
+                        </div>
+                        {pharmacyItems.filter(i => i.name.toLowerCase().includes(newItemName.toLowerCase())).map((item: any) => (
+                          <button
+                            key={item.id}
+                            onClick={() => handleSelectPharmacyItem(item)}
+                            className="w-full text-left px-4 py-2 hover:bg-background-light text-sm flex items-center justify-between group"
+                          >
+                            <span>{item.name}</span>
+                            <span className="text-xs text-text-muted group-hover:text-primary border border-border-light group-hover:border-primary px-1.5 py-0.5 rounded">
+                              {item.scientificName ? 'Planta' : 'Tratamento'}
+                            </span>
+                          </button>
+                        ))}
+                        {pharmacyItems.length === 0 && <p className="p-4 text-xs text-text-muted italic">Nenhum item carregado.</p>}
+                      </div>
+                    )}
+
+                    {isPharmacyModalOpen && (
+                      <div className="fixed inset-0 z-40" onClick={() => setIsPharmacyModalOpen(false)}></div>
+                    )}
+                  </div>
                 </div>
                 <div className="md:col-span-3">
                   <label className="block text-xs font-medium text-text-muted mb-1">Dosagem</label>
@@ -724,14 +989,16 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                   <span className="material-symbols-outlined text-xl">print</span>
                   Imprimir
                 </button>
-                <button
-                  onClick={handleSavePrescription}
-                  disabled={isSaving}
-                  className="flex items-center gap-2 px-8 py-3 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold shadow-md hover:shadow-lg transition-all transform active:scale-95 disabled:opacity-70 disabled:active:scale-100"
-                >
-                  <span className="material-symbols-outlined text-xl">save</span>
-                  {isSaving ? 'Salvando...' : 'Emitir Prescrição'}
-                </button>
+                {!isReadOnly && (
+                  <button
+                    onClick={handleSavePrescription}
+                    disabled={isSaving}
+                    className="flex items-center gap-2 px-8 py-3 rounded-lg bg-primary hover:bg-primary-dark text-white font-bold shadow-md hover:shadow-lg transition-all transform active:scale-95 disabled:opacity-70 disabled:active:scale-100"
+                  >
+                    <span className="material-symbols-outlined text-xl">save</span>
+                    {isSaving ? 'Salvando...' : 'Emitir Prescrição'}
+                  </button>
+                )}
               </div>
             </div>
           </div>

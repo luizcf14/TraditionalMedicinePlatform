@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Screen } from './types';
+import React, { useState, useEffect } from 'react';
+import { Screen, User } from './types';
 import Layout from './components/Layout';
 import LoginScreen from './pages/LoginScreen';
 import DashboardScreen from './pages/DashboardScreen';
@@ -10,11 +10,16 @@ import RegistrationScreen from './pages/RegistrationScreen';
 import AgendaScreen from './pages/AgendaScreen';
 
 import NewAppointmentScreen from './pages/NewAppointmentScreen';
+import PharmacyScreen from './pages/PharmacyScreen';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>(() => {
     const saved = localStorage.getItem('currentScreen');
     return (saved as Screen) || Screen.LOGIN;
+  });
+  const [currentUser, setCurrentUser] = useState<User | null>(() => {
+    const saved = localStorage.getItem('currentUser');
+    return saved ? JSON.parse(saved) : null;
   });
   const [selectedPatientId, setSelectedPatientId] = useState<string | null>(() => {
     return localStorage.getItem('selectedPatientId');
@@ -23,15 +28,19 @@ const App: React.FC = () => {
     return localStorage.getItem('selectedAppointmentId');
   });
 
-  const handleLogin = () => {
+  const handleLogin = (user: User) => {
+    setCurrentUser(user);
+    localStorage.setItem('currentUser', JSON.stringify(user));
     setCurrentScreen(Screen.DASHBOARD);
   };
 
   const handleLogout = () => {
     setCurrentScreen(Screen.LOGIN);
+    setCurrentUser(null);
     setSelectedPatientId(null);
     setSelectedAppointmentId(null);
     localStorage.removeItem('currentScreen');
+    localStorage.removeItem('currentUser');
     localStorage.removeItem('selectedPatientId');
     localStorage.removeItem('selectedAppointmentId');
   };
@@ -75,13 +84,15 @@ const App: React.FC = () => {
         return <RegistrationScreen onNavigate={navigate} patientId={selectedPatientId} />;
       case Screen.AGENDA:
         return <AgendaScreen onNavigate={navigate} />;
+      case Screen.PHARMACY:
+        return <PharmacyScreen onNavigate={navigate} patientId={selectedPatientId} appointmentId={selectedAppointmentId} />;
       default:
         return <DashboardScreen onNavigate={navigate} />;
     }
   };
 
   return (
-    <Layout currentScreen={currentScreen} onNavigate={navigate} onLogout={handleLogout}>
+    <Layout currentScreen={currentScreen} onNavigate={navigate} onLogout={handleLogout} user={currentUser}>
       {renderScreen()}
     </Layout>
   );

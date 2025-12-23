@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Screen, Appointment } from '../types';
+import { Screen } from '../types';
 
 interface DashboardScreenProps {
   onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -8,6 +8,7 @@ interface DashboardScreenProps {
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ treatmentsCount: 0, prescriptionsCount: 0, patientsCount: 0 });
 
   useEffect(() => {
     const fetchTodayAppointments = async () => {
@@ -30,6 +31,18 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
             .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
           setAppointments(scheduled);
         }
+
+        // Fetch Stats
+        const statsRes = await fetch('http://localhost:3001/api/dashboard/stats');
+        const statsData = await statsRes.json();
+        if (statsData.success) {
+          setStats({
+            treatmentsCount: statsData.treatmentsCount,
+            prescriptionsCount: statsData.prescriptionsCount,
+            patientsCount: statsData.patientsCount
+          });
+        }
+
       } catch (error) {
         console.error('Error fetching dashboard data:', error);
       } finally {
@@ -206,9 +219,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { icon: 'medical_services', title: 'Atendimentos Hoje', value: appointments.length.toString(), trend: null, color: 'text-primary' },
-          { icon: 'hourglass_empty', title: 'Fila de Espera', value: appointments.length.toString(), sub: 'pacientes', color: 'text-[#8B5E3C]' },
-          { icon: 'spa', title: 'Tratamentos Ativos', value: '28', trend: '5%', color: 'text-primary' },
-          { icon: 'inventory_2', title: 'Estoque Ervas', value: '95%', sub: 'Saudável', color: 'text-blue-500' },
+          { icon: 'assignment_turned_in', title: 'Total Prescrições', value: stats.prescriptionsCount.toString(), sub: 'Emitidas', color: 'text-[#8B5E3C]' },
+          { icon: 'spa', title: 'Farmácia Viva', value: stats.treatmentsCount.toString(), sub: 'Tratamentos', color: 'text-green-600' },
+          { icon: 'groups', title: 'Total de Pacientes', value: stats.patientsCount.toString(), sub: 'Cadastrados', color: 'text-blue-600' },
         ].map((stat, i) => (
           <div key={i} className="flex flex-col gap-2 rounded-xl p-4 bg-white border border-border-light shadow-sm relative overflow-hidden group">
             <div className="absolute right-0 top-0 p-3 opacity-5 group-hover:opacity-10 transition-opacity">

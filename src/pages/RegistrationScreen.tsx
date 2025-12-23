@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Screen } from '../types';
 
 interface RegistrationScreenProps {
@@ -23,10 +23,17 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
     motherName: '',
     bloodType: '',
     allergies: '',
-    conditions: ''
+    conditions: '',
+    image: ''
   });
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+
+  // Webcam State
+  const [isCameraOpen, setIsCameraOpen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const [stream, setStream] = useState<MediaStream | null>(null);
 
   useEffect(() => {
     if (patientId) {
@@ -49,6 +56,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
               bloodType: p.bloodType || '',
               allergies: p.allergies || '',
               conditions: p.conditions || '',
+              image: p.image || ''
             }));
           }
         })
@@ -60,6 +68,72 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
+
+  const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      if (file.size > 5 * 1024 * 1024) { // 5MB limit check (backend allows 50MB but good to be sane)
+        alert('A imagem deve ter no máximo 5MB.');
+        return;
+      }
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setFormData(prev => ({ ...prev, image: reader.result as string }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const startCamera = async () => {
+    try {
+      setIsCameraOpen(true);
+      const mediaStream = await navigator.mediaDevices.getUserMedia({ video: true });
+      setStream(mediaStream);
+      if (videoRef.current) {
+        videoRef.current.srcObject = mediaStream;
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      alert("Não foi possível acessar a câmera. Verifique as permissões.");
+      setIsCameraOpen(false);
+    }
+  };
+
+  const stopCamera = () => {
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop());
+      setStream(null);
+    }
+    setIsCameraOpen(false);
+  };
+
+  const takePhoto = () => {
+    if (videoRef.current && canvasRef.current) {
+      const context = canvasRef.current.getContext('2d');
+      if (context) {
+        // Set canvas dimensions to match video
+        canvasRef.current.width = videoRef.current.videoWidth;
+        canvasRef.current.height = videoRef.current.videoHeight;
+
+        // Draw video frame to canvas
+        context.drawImage(videoRef.current, 0, 0, canvasRef.current.width, canvasRef.current.height);
+
+        // Convert to Base64
+        const dataUrl = canvasRef.current.toDataURL('image/jpeg');
+        setFormData(prev => ({ ...prev, image: dataUrl }));
+        stopCamera();
+      }
+    }
+  };
+
+  // Cleanup stream on unmount
+  useEffect(() => {
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, [stream]);
 
   const handleSave = async () => {
     setLoading(true);
@@ -75,7 +149,8 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
         indigenousName: formData.indigenousName,
         bloodType: formData.bloodType,
         allergies: formData.allergies,
-        conditions: formData.conditions
+        conditions: formData.conditions,
+        image: formData.image
       };
 
       const url = patientId
@@ -150,49 +225,117 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
         {/* Left Column: Main Form */}
         <div className="lg:col-span-2 space-y-6">
-          {/* Section: Personal Info */}
-          <section className="bg-white rounded-xl border border-border-light p-6 shadow-sm">
-            <div className="flex items-center gap-2 mb-6 border-b border-border-light pb-4">
-              <span className="material-symbols-outlined text-primary">person</span>
-              <h3 className="text-lg font-bold text-text-main">Identificação Civil</h3>
+          {/* Section: Photo & Basic Info */}
+          <div className="bg-white rounded-xl border border-border-light p-6 shadow-sm flex flex-col md:flex-row gap-6 items-center md:items-start">
+            <div className="flex flex-col items-center gap-3">
+              {isCameraOpen ? (
+                <div className="relative w-64 h-64 bg-black rounded-lg overflow-hidden flex flex-col items-center justify-center">
+                  <video ref={videoRef} autoPlay playsInline className="w-full h-full object-cover" />
+                  <canvas ref={canvasRef} className="hidden" />
+                  <div className="absolute bottom-4 flex gap-3">
+                    <button
+                      onClick={takePhoto}
+                      type="button"
+                      className="bg-white text-primary p-3 rounded-full shadow-lg hover:scale-105 transition-transform"
+                      title="Tirar Foto"
+                    >
+                      <span className="material-symbols-outlined">camera_alt</span>
+                    </button>
+                    <button
+                      onClick={stopCamera}
+                      type="button"
+                      className="bg-red-500 text-white p-3 rounded-full shadow-lg hover:scale-105 transition-transform"
+                      title="Cancelar"
+                    >
+                      <span className="material-symbols-outlined">close</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div
+                    className="w-32 h-32 rounded-full border-4 border-background-light bg-gray-100 flex items-center justify-center overflow-hidden relative group"
+                    style={{
+                      backgroundImage: formData.image ? `url(${formData.image})` : 'none',
+                      backgroundSize: 'cover',
+                      backgroundPosition: 'center'
+                    }}
+                  >
+                    {!formData.image && (
+                      <span className="material-symbols-outlined text-4xl text-gray-400">add_a_photo</span>
+                    )}
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageChange}
+                      className="absolute inset-0 opacity-0 cursor-pointer z-10"
+                      title="Carregar arquivo"
+                    />
+
+                    {/* Hover Overlay */}
+                    <div className="absolute inset-0 bg-black/30 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                      <span className="material-symbols-outlined text-white">edit</span>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-2">
+                    <button
+                      type="button"
+                      onClick={startCamera}
+                      className="text-xs flex items-center gap-1 text-primary hover:underline font-medium"
+                    >
+                      <span className="material-symbols-outlined text-sm">photo_camera</span>
+                      Usar Câmera
+                    </button>
+                    <span className="text-gray-300">|</span>
+                    <p className="text-xs text-text-muted">Ou clique na foto para upload</p>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-text-main mb-2">Nome Civil Completo *</label>
-                <input
-                  name="name" value={formData.name} onChange={handleChange}
-                  className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
-                  placeholder="Como consta no documento oficial" type="text"
-                />
+            <div className="flex-1 w-full">
+              <div className="flex items-center gap-2 mb-4 border-b border-border-light pb-2">
+                <span className="material-symbols-outlined text-primary">person</span>
+                <h3 className="text-lg font-bold text-text-main">Identificação Civil</h3>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-text-main mb-2">Nome Social (Opcional)</label>
-                <input
-                  name="socialName" value={formData.socialName} onChange={handleChange}
-                  className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
-                  placeholder="Nome pelo qual prefere ser chamado" type="text"
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-text-main mb-2">Data de Nascimento</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-text-main mb-2">Nome Civil Completo *</label>
                   <input
-                    name="dob" value={formData.dob} onChange={handleChange}
+                    name="name" value={formData.name} onChange={handleChange}
                     className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
-                    type="date"
+                    placeholder="Como consta no documento oficial" type="text"
                   />
                 </div>
                 <div>
-                  <label className="block text-sm font-medium text-text-main mb-2">Sexo Biológico</label>
-                  <select name="sex" value={formData.sex} onChange={handleChange} className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3">
-                    <option value="">Selecione</option>
-                    <option value="Masculino">Masculino</option>
-                    <option value="Feminino">Feminino</option>
-                  </select>
+                  <label className="block text-sm font-medium text-text-main mb-2">Nome Social (Opcional)</label>
+                  <input
+                    name="socialName" value={formData.socialName} onChange={handleChange}
+                    className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                    placeholder="Nome pelo qual prefere ser chamado" type="text"
+                  />
+                </div>
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-main mb-2">Data de Nascimento</label>
+                    <input
+                      name="dob" value={formData.dob} onChange={handleChange}
+                      className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                      type="date"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-text-main mb-2">Sexo Biológico</label>
+                    <select name="sex" value={formData.sex} onChange={handleChange} className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3">
+                      <option value="">Selecione</option>
+                      <option value="Masculino">Masculino</option>
+                      <option value="Feminino">Feminino</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             </div>
-          </section>
+          </div>
 
           {/* Section: Cultural Context */}
           <section className="bg-white rounded-xl border border-border-light p-6 shadow-sm relative overflow-hidden">
@@ -320,7 +463,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
           </div>
         </div>
       </div>
-    </div>
+    </div >
   );
 };
 

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { Screen, Patient, Appointment } from '../types';
+import PrescriptionDocument from '../components/PrescriptionDocument';
+import PatientSummaryDocument from '../components/PatientSummaryDocument';
 
 interface PatientRecordScreenProps {
-  onNavigate: (screen: Screen, patientId?: string) => void;
+  onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
   patientId?: string | null;
 }
 
@@ -52,6 +54,54 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
   const [isLoading, setIsLoading] = useState(true);
   const [activeTreatments, setActiveTreatments] = useState<ActiveTreatment[]>([]);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+
+  // Quick Print State
+  const [printingPrescription, setPrintingPrescription] = useState<any | null>(null);
+  const [isPrinting, setIsPrinting] = useState(false);
+  const [isPrintingSummary, setIsPrintingSummary] = useState(false);
+
+  useEffect(() => {
+    if ((printingPrescription && isPrinting) || isPrintingSummary) {
+      // Give time for Portal to render
+      setTimeout(() => {
+        window.print();
+        setIsPrinting(false);
+        setIsPrintingSummary(false); // Reset summary print state
+        setPrintingPrescription(null); // Clear after print
+      }, 500);
+    }
+  }, [printingPrescription, isPrinting, isPrintingSummary]);
+
+  const handlePrintSummary = () => {
+    setIsPrintingSummary(true);
+  };
+
+  const handleQuickPrint = async (appointmentId: string) => {
+    try {
+      const response = await fetch(`http://localhost:3001/api/appointments/${appointmentId}/details`);
+      const data = await response.json();
+
+      if (data.success && data.prescription) {
+        setPrintingPrescription({
+          patient: patient,
+          items: data.items ? data.items.map((i: any) => ({
+            ...i,
+            treatmentDetails: i.treatmentDetails,
+            plantDetails: i.plantDetails
+          })) : [],
+          diagnosis: data.prescription.diagnosis || '',
+          notes: data.prescription.notes || '',
+          history: [] // Optional: fetch history if needed, or leave empty for quick print
+        });
+        setIsPrinting(true);
+      } else {
+        alert("Erro ao carregar dados da prescrição.");
+      }
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao conectar com o servidor.");
+    }
+  };
 
   useEffect(() => {
     if (patientId) {
@@ -143,7 +193,10 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
               <span className="material-symbols-outlined text-lg">edit</span>
               Editar
             </button>
-            <button className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-background-light border border-border-light rounded-lg text-text-main hover:bg-gray-100 transition-colors font-medium text-sm">
+            <button
+              onClick={handlePrintSummary}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-background-light border border-border-light rounded-lg text-text-main hover:bg-gray-100 transition-colors font-medium text-sm"
+            >
               <span className="material-symbols-outlined text-lg">print</span>
               Imprimir
             </button>
@@ -194,7 +247,7 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
             <button className="px-6 py-3 text-sm font-medium text-primary border-b-2 border-primary whitespace-nowrap bg-transparent">
               Histórico Clínico
             </button>
-            <button className="px-6 py-3 text-sm font-medium text-text-muted hover:text-text-main transition-colors whitespace-nowrap bg-transparent">
+            {/* <button className="px-6 py-3 text-sm font-medium text-text-muted hover:text-text-main transition-colors whitespace-nowrap bg-transparent">
               Tratamentos Atuais
             </button>
             <button className="px-6 py-3 text-sm font-medium text-text-muted hover:text-text-main transition-colors whitespace-nowrap bg-transparent">
@@ -202,7 +255,7 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
             </button>
             <button className="px-6 py-3 text-sm font-medium text-text-muted hover:text-text-main transition-colors whitespace-nowrap bg-transparent">
               Evolução Espiritual
-            </button>
+            </button> */}
           </div>
 
           {/* Filter */}
@@ -264,6 +317,23 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
                       </span>
                     </div>
                     <p className="text-text-main text-sm mb-4">{apt.notes}</p>
+
+                    {/* Actions */}
+                    {apt.prescriptionId && (
+                      <div className="flex justify-end pt-3 border-t border-border-light">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleQuickPrint(apt.id);
+                          }}
+                          className="flex items-center gap-1.5 text-xs font-semibold text-primary hover:text-primary-dark transition-colors bg-primary/5 hover:bg-primary/10 px-3 py-1.5 rounded-full"
+                          title="Re-imprimir Prescrição"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">print</span>
+                          Imprimir Prescrição
+                        </button>
+                      </div>
+                    )}
                   </div>
                 </div>
               );
@@ -351,13 +421,67 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
           </div>
         </div>
       </div>
-      {selectedAppointmentId && (
-        <AppointmentDetailsModal
-          appointmentId={selectedAppointmentId}
-          onClose={() => setSelectedAppointmentId(null)}
-        />
-      )}
-    </div>
+      {
+        selectedAppointmentId && (
+          <AppointmentDetailsModal
+            appointmentId={selectedAppointmentId}
+            onClose={() => setSelectedAppointmentId(null)}
+            onNavigate={onNavigate}
+          />
+        )
+      }
+
+      <style>
+        {`
+          @media print {
+            html, body {
+              overflow: visible !important;
+              height: auto !important;
+            }
+            #root { display: none !important; }
+            #printable-section, #printable-summary {
+              display: block !important;
+              position: relative !important;
+              width: 100% !important;
+              height: auto !important;
+              background: white;
+              padding: 0;
+              margin: 0;
+            }
+            .page-break {
+                page-break-before: always;
+                break-before: page;
+                display: block;
+                margin-top: 2rem;
+            }
+            #printable-section *, #printable-summary * { visibility: visible !important; }
+          }
+        `}
+      </style>
+
+      {/* Hidden Portal for Print */}
+      {
+        printingPrescription && (
+          <PrescriptionDocument
+            patient={printingPrescription.patient}
+            items={printingPrescription.items}
+            diagnosis={printingPrescription.diagnosis}
+            notes={printingPrescription.notes}
+            history={printingPrescription.history}
+          />
+        )
+      }
+
+      {
+        isPrintingSummary && patient && (
+          <PatientSummaryDocument
+            patient={patient}
+            appointments={appointments}
+            activeTreatments={activeTreatments}
+          />
+        )
+      }
+    </div >
   );
 };
 
