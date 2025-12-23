@@ -4,7 +4,11 @@ export enum Screen {
   PATIENT_LIST = 'PATIENT_LIST',
   PATIENT_RECORD = 'PATIENT_RECORD',
   NEW_PRESCRIPTION = 'NEW_PRESCRIPTION',
-  REGISTRATION = 'REGISTRATION'
+  REGISTRATION = 'REGISTRATION',
+  NEW_APPOINTMENT = 'NEW_APPOINTMENT',
+  AGENDA = 'AGENDA',
+  PHARMACY = 'PHARMACY',
+  SETTINGS = 'SETTINGS'
 }
 
 export interface Patient {
@@ -15,10 +19,24 @@ export interface Patient {
   dob: string;
   village: string;
   ethnicity?: string;
-  status: 'Em Tratamento' | 'Acompanhamento' | 'Alta Médica' | 'Triagem';
+  status: 'Em Tratamento' | 'Concluido' | 'Aguardando';
   lastVisit?: string;
   image: string;
   cns?: string;
+  allergies?: string;
+  conditions?: string;
+  bloodType?: string;
+}
+
+export interface Appointment {
+  id: string;
+  patientId: string;
+  doctorId: string;
+  doctorName: string;
+  date: string;
+  reason: string;
+  notes: string;
+  status: 'Agendada' | 'Concluida' | 'Cancelada';
 }
 
 export interface PrescriptionItem {

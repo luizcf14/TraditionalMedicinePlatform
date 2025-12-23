@@ -19,7 +19,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
             <span className="material-symbols-outlined text-[20px]">print</span>
             Relatório Diário
           </button>
-          <button className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-primary-dark transition-colors">
+          <button
+            onClick={() => onNavigate(Screen.NEW_APPOINTMENT)}
+            className="flex items-center gap-2 bg-primary text-white px-4 py-2 rounded-lg text-sm font-bold shadow-md hover:bg-primary-dark transition-colors">
             <span className="material-symbols-outlined text-[20px]">add</span>
             Novo Atendimento
           </button>
@@ -30,7 +32,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
       <div>
         <h3 className="text-text-main text-xl font-bold leading-tight mb-4">Acesso Rápido</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <button 
+          <button
             onClick={() => onNavigate(Screen.REGISTRATION)}
             className="flex items-center gap-4 p-6 rounded-xl bg-white border border-border-light hover:border-primary/50 hover:shadow-md transition-all text-left group flex-1"
           >
@@ -43,7 +45,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => onNavigate(Screen.PATIENT_LIST)}
             className="flex items-center gap-4 p-6 rounded-xl bg-white border border-border-light hover:border-primary/50 hover:shadow-md transition-all text-left group flex-1"
           >
@@ -56,7 +58,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
             </div>
           </button>
 
-          <button 
+          <button
             onClick={() => onNavigate(Screen.PATIENT_LIST)}
             className="flex items-center gap-4 p-6 rounded-xl bg-white border border-border-light hover:border-primary/50 hover:shadow-md transition-all text-left group flex-1"
           >
@@ -88,7 +90,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
           <div className="relative flex flex-col gap-1 flex-1">
             <p className="text-primary-dark text-xs font-semibold uppercase tracking-wider">Próximo Paciente</p>
             <div className="flex items-center gap-3">
-              <div 
+              <div
                 className="size-10 rounded-full bg-gray-200 bg-center bg-cover"
                 style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuC4RhLLdMvP9af8lqdepQvH2ZT2JnTPBSR0YL9olWGuXg7evXxQYq6__6-1Tpch5UfGflTgIvL2vyv22Q9hE1mfgsE8qSqJQh2Af4hV3_HuAkBeJwDwCNkX2SNmwiPbQ8Q_VaktpRsLCZ2-MfqoqI-I4KyHRbaki0msMyFOBZZB8CMpqQc5Gm0PC9U0BJyZf-NOT7LNAUM-G8zlPjl9Jdy7xEEajXwvhgcrb_O1Db7pL3t-yJ2jBEWrHErcgc4R7gmfXA-QMQiJAjU")' }}
               ></div>
@@ -96,7 +98,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
             </div>
             <p className="text-text-muted text-sm mt-1">Motivo: Dor muscular · Horário: 10:30</p>
           </div>
-          <button 
+          <button
             onClick={() => onNavigate(Screen.PATIENT_RECORD)}
             className="w-full sm:w-auto ml-auto flex-shrink-0 bg-primary text-white px-5 py-2.5 rounded-lg text-sm font-bold shadow-md hover:bg-primary-dark transition-colors relative z-10"
           >
@@ -133,7 +135,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
                 <tr className="hover:bg-background-light transition-colors">
                   <td className="px-6 py-4">
                     <div className="flex items-center gap-3">
-                      <div 
+                      <div
                         className="size-8 rounded-full bg-gray-200 bg-center bg-cover"
                         style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuAfzomiUCPd39Snktnyr86sMaQ2nNRXGMg6TgHtl9p77-vowxGIYtIJR_H34u9_uGAOQ6BrcsrH6Gnqmr6vt3cI3hS8dmxfCzrslMvr5N9Gt74Sg4HODCy1JUGZjIS99aZMnZTy6NEyU5gs6fciD4_MlXjnkfpBRGz59VqyIUEp9nmEkmrbIJcZZESSycNTmkh2CAQrHbxd3jH0GLqmm9oY1-y_r_sDTGjsSmmy7JqoeyxHElptTBVQIazK1pE_YwWthshY48mcSSw")' }}
                       ></div>

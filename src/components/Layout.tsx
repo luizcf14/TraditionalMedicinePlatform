@@ -17,21 +17,21 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
   const navItems = [
     { icon: 'dashboard', label: 'Painel Principal', screen: Screen.DASHBOARD },
     { icon: 'groups', label: 'Pacientes', screen: Screen.PATIENT_LIST },
-    { icon: 'calendar_month', label: 'Agenda', screen: Screen.DASHBOARD }, // Mock
-    { icon: 'spa', label: 'Farmácia Viva', screen: Screen.DASHBOARD }, // Mock
-    { icon: 'settings', label: 'Configurações', screen: Screen.DASHBOARD }, // Mock
+    { icon: 'calendar_month', label: 'Agenda', screen: Screen.AGENDA }, // Mock
+    { icon: 'spa', label: 'Farmácia Viva', screen: Screen.PHARMACY }, // Mock
+    { icon: 'settings', label: 'Configurações', screen: Screen.SETTINGS }, // Mock
   ];
 
   return (
-    <div class="flex h-screen w-full overflow-hidden bg-background-light text-text-main font-sans">
+    <div className="flex h-screen w-full overflow-hidden bg-background-light text-text-main font-sans">
       {/* Sidebar */}
       <aside className="w-64 h-full hidden md:flex flex-col border-r border-border-light bg-surface-light shrink-0 z-20">
         <div className="h-full flex flex-col justify-between p-4">
           <div className="flex flex-col gap-4">
             {/* Logo */}
             <div className="flex gap-3 items-center px-2 py-2">
-              <div 
-                className="bg-center bg-no-repeat bg-cover rounded-xl size-10 shadow-sm border border-primary/20" 
+              <div
+                className="bg-center bg-no-repeat bg-cover rounded-xl size-10 shadow-sm border border-primary/20"
                 style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuD55_dcfL2qLFH3HBBM117qo4jkY2tutW_pTBsB0KJl1iPiCKn2jSfFE2JtoA6DlHKQECszJ2ycAxxNRbm5hCs4ZVHSqSDCyTeC7QtGsJpjJGWFWNoBgQ0ipcgHlCWYVfjdbHXBDuPkF3-2vF80IR30M-6j3bFGRaBjPxNCdu5B-xAX89iN015YCU8Ecfpxzo-obyfOSxtB2eeczfwvDmUbalpGdA0pmGSw2JjHP-Rhg9lL0t_fNrfJFr5TskRbY90tu4U20BVsrbk")' }}
               />
               <div className="flex flex-col">
@@ -46,11 +46,10 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
                 <button
                   key={item.label}
                   onClick={() => onNavigate(item.screen)}
-                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors w-full text-left ${
-                    currentScreen === item.screen 
-                      ? 'bg-primary/10 text-primary font-semibold' 
-                      : 'text-text-muted hover:bg-background-light hover:text-text-main'
-                  }`}
+                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors w-full text-left ${currentScreen === item.screen
+                    ? 'bg-primary/10 text-primary font-semibold'
+                    : 'text-text-muted hover:bg-background-light hover:text-text-main'
+                    }`}
                 >
                   <span className={`material-symbols-outlined ${currentScreen === item.screen ? 'fill-1' : ''}`}>
                     {item.icon}
@@ -64,7 +63,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
           {/* User Profile Footer */}
           <div className="px-2 py-4 border-t border-border-light">
             <div className="flex items-center gap-3 p-2 rounded-lg hover:bg-background-light cursor-pointer transition-colors" onClick={onLogout}>
-              <div 
+              <div
                 className="bg-center bg-no-repeat bg-cover rounded-full size-8 ring-2 ring-primary/30"
                 style={{ backgroundImage: 'url("https://lh3.googleusercontent.com/aida-public/AB6AXuCuO4qDRBUEnOdmCSjy3TEZsgjJDWaK9Cb4ebIPtI4mjvYXJJdpdBllKmL8xIOss2QXgo2zvsVjnhozqHffDUOZEGY1RCViF5XzTen39NQyQnboOhExUqpTrInvUnG0oO9Gar0xbu8f-PST5uVTuipIRRw_LZqvhcw8KXKgLYQdmL2koFnWtDwG26t2E3EL9DQ4ezIq6iljs7zsE9_HpEpWmFAC7zfpLKKH3uoiGBfOqhM9lGSyRh2WO_VZDm3jPWiGhkcscH1xfxM")' }}
               />
@@ -91,9 +90,9 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
                 <div className="text-text-muted flex items-center justify-center pl-4 rounded-l-lg">
                   <span className="material-symbols-outlined">search</span>
                 </div>
-                <input 
-                  className="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg bg-transparent border-none h-full placeholder:text-text-muted px-4 text-sm font-normal focus:ring-0" 
-                  placeholder="Buscar pacientes, ervas, prontuários..." 
+                <input
+                  className="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg bg-transparent border-none h-full placeholder:text-text-muted px-4 text-sm font-normal focus:ring-0"
+                  placeholder="Buscar pacientes, ervas, prontuários..."
                 />
               </div>
             </div>
@@ -106,7 +105,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
             <div className="h-8 w-[1px] bg-border-light hidden md:block"></div>
             <div className="md:hidden size-8 rounded-full bg-primary/20"></div>
             <div className="hidden md:block">
-               <span className="text-sm font-semibold text-text-main">Bahsé Ahpose v1.0</span>
+              <span className="text-sm font-semibold text-text-main">Bahsé Ahpose v1.0</span>
             </div>
           </div>
         </header>
