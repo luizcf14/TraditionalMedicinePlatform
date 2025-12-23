@@ -113,8 +113,17 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
     };
 
     // Filter logic
+    const categoryMap: Record<string, string> = {
+        'Todas': 'Todas',
+        'Digestivas': 'Digestiva',
+        'Respiratórias': 'Respiratória',
+        'Cicatrizantes': 'Cicatrizante',
+        'Calmantes': 'Calmante',
+        'Anti-inflamatórias': 'Anti-inflamatório'
+    };
+
     const filteredPlants = plants.filter(p =>
-        (selectedCategory === 'Todas' || p.mainUse?.includes(selectedCategory)) &&
+        (selectedCategory === 'Todas' || p.mainUse?.includes(categoryMap[selectedCategory] || selectedCategory)) &&
         p.name.toLowerCase().includes(searchTerm.toLowerCase())
     );
 
