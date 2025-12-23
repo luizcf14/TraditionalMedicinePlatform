@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Appointment, Screen } from '../types';
+import { apiFetch } from '../services/api';
 
 interface AppointmentDetails {
     appointment: Appointment;
@@ -26,7 +27,7 @@ const AppointmentDetailsModal: React.FC<{
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        fetch(`http://localhost:3001/api/appointments/${appointmentId}/details`)
+        apiFetch(`/api/appointments/${appointmentId}/details`)
             .then(res => res.json())
             .then(data => {
                 if (data.success) {
@@ -170,7 +171,7 @@ const AppointmentDetailsModal: React.FC<{
                                 <button
                                     onClick={() => {
                                         if (confirm('Tem certeza que deseja antecipar esta consulta para agora?')) {
-                                            fetch(`http://localhost:3001/api/appointments/${appointmentId}`, {
+                                            apiFetch(`/api/appointments/${appointmentId}`, {
                                                 method: 'PUT',
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ date: new Date().toISOString() })
@@ -192,7 +193,7 @@ const AppointmentDetailsModal: React.FC<{
                                 <button
                                     onClick={() => {
                                         if (confirm('Tem certeza que deseja cancelar esta consulta?')) {
-                                            fetch(`http://localhost:3001/api/appointments/${appointmentId}`, {
+                                            apiFetch(`/api/appointments/${appointmentId}`, {
                                                 method: 'PUT',
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ status: 'Cancelada' })

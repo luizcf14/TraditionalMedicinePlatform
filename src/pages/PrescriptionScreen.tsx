@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { Screen, Patient, Plant, Treatment, ICDCode } from '../types';
 import PrescriptionDocument from '../components/PrescriptionDocument';
+import { apiFetch } from '../services/api';
 
 interface PrescriptionScreenProps {
   onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -61,8 +62,8 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     const fetchPharmacy = async () => {
       try {
         const [plantsRes, treatmentsRes] = await Promise.all([
-          fetch('http://localhost:3001/api/pharmacy/plants'),
-          fetch('http://localhost:3001/api/pharmacy/treatments')
+          apiFetch('/api/pharmacy/plants'),
+          apiFetch('/api/pharmacy/treatments')
         ]);
         const plantsData = await plantsRes.json();
         const treatmentsData = await treatmentsRes.json();
@@ -92,7 +93,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     if (!patientId) return;
 
     console.log('Fetching history for patient:', patientId);
-    fetch(`http://localhost:3001/api/patients/${patientId}/appointments`)
+    apiFetch(`/api/patients/${patientId}/appointments`)
       .then(res => res.json())
       .then(data => {
         console.log('History data:', data);
@@ -108,7 +109,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
   useEffect(() => {
     if (patientId) {
       // Fetch Patient Details
-      fetch(`http://localhost:3001/api/patients/${patientId}`)
+      apiFetch(`/api/patients/${patientId}`)
         .then(res => res.json())
         .then(data => {
           if (data.success) {
@@ -133,7 +134,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     if (appointmentId) {
       console.log('Fetching existing prescription for appointment:', appointmentId);
       setIsSaving(true); // Show loading state
-      fetch(`http://localhost:3001/api/appointments/${appointmentId}/details`)
+      apiFetch(`/api/appointments/${appointmentId}/details`)
         .then(res => res.json())
         .then(data => {
           console.log("Appointment details loaded:", data);
@@ -247,7 +248,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     setIsSaving(true);
     try {
       // 1. Save Prescription
-      const response = await fetch('http://localhost:3001/api/prescriptions', {
+      const response = await apiFetch('/api/prescriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -265,7 +266,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
         // 2. If Schedule Return is checked, create new appointment
         if (scheduleReturn && returnDate) {
           try {
-            await fetch('http://localhost:3001/api/appointments', {
+            await apiFetch('/api/appointments', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
@@ -323,7 +324,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
         conditions: conditions
       };
 
-      const response = await fetch(`http://localhost:3001/api/patients/${patientId}`, {
+      const response = await apiFetch(`/api/patients/${patientId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -773,7 +774,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                   onChange={(e) => {
                     const val = e.target.value;
                     if (val.length >= 2) {
-                      fetch(`http://localhost:3001/api/icd?q=${encodeURIComponent(val)}`)
+                      apiFetch(`/api/icd?q=${encodeURIComponent(val)}`)
                         .then(r => r.json())
                         .then(d => {
                           if (d.success) setIcdResults(d.codes);

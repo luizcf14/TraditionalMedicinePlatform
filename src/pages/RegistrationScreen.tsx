@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Screen } from '../types';
+import { apiFetch } from '../services/api';
 
 interface RegistrationScreenProps {
   onNavigate: (screen: Screen, patientId?: string) => void;
@@ -40,7 +41,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
   useEffect(() => {
     if (patientId) {
       setFetching(true);
-      fetch(`http://localhost:3001/api/patients/${patientId}`)
+      apiFetch(`/api/patients/${patientId}`)
         .then(res => res.json())
         .then(data => {
           if (data.success && data.patient) {
@@ -158,12 +159,12 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
       };
 
       const url = patientId
-        ? `http://localhost:3001/api/patients/${patientId}`
-        : 'http://localhost:3001/api/patients';
+        ? `/api/patients/${patientId}`
+        : '/api/patients';
 
       const method = patientId ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await apiFetch(url, {
         method: method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body)
@@ -214,7 +215,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
                 if (window.confirm("ATENÇÃO: Isso excluirá permanentemente o paciente e todos os seus registros de consultas e prescrições. Essa ação não pode ser desfeita.\n\nDeseja continuar?")) {
                   setLoading(true);
                   try {
-                    const res = await fetch(`http://localhost:3001/api/patients/${patientId}`, { method: 'DELETE' });
+                    const res = await apiFetch(`/api/patients/${patientId}`, { method: 'DELETE' });
                     const data = await res.json();
                     if (data.success) {
                       alert('Paciente excluído.');

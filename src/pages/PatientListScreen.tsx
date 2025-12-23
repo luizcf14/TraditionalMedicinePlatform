@@ -1,5 +1,6 @@
 import React from 'react';
 import { Screen, Patient } from '../types';
+import { apiFetch } from '../services/api';
 
 interface PatientListScreenProps {
   onNavigate: (screen: Screen, patientId?: string) => void;
@@ -16,7 +17,7 @@ const PatientListScreen: React.FC<PatientListScreenProps> = ({ onNavigate }) => 
   const fetchPatients = async (term: string = '') => {
     setIsLoading(true);
     try {
-      const response = await fetch(`http://localhost:3001/api/patients?q=${encodeURIComponent(term)}`);
+      const response = await apiFetch(`/api/patients?q=${encodeURIComponent(term)}`);
       const data = await response.json();
       if (data.success) {
         setPatients(data.patients);

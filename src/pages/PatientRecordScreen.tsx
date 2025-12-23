@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Screen, Patient, Appointment } from '../types';
 import PrescriptionDocument from '../components/PrescriptionDocument';
 import PatientSummaryDocument from '../components/PatientSummaryDocument';
+import { apiFetch } from '../services/api';
 
 interface PatientRecordScreenProps {
   onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -80,7 +81,7 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
 
   const handleQuickPrint = async (appointmentId: string) => {
     try {
-      const response = await fetch(`http://localhost:3001/api/appointments/${appointmentId}/details`);
+      const response = await apiFetch(`/api/appointments/${appointmentId}/details`);
       const data = await response.json();
 
       if (data.success && data.prescription) {
@@ -109,9 +110,9 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
     if (patientId) {
       setIsLoading(true);
       Promise.all([
-        fetch(`http://localhost:3001/api/patients/${patientId}`).then(res => res.json()),
-        fetch(`http://localhost:3001/api/patients/${patientId}/appointments`).then(res => res.json()),
-        fetch(`http://localhost:3001/api/patients/${patientId}/active-treatments`).then(res => res.json())
+        apiFetch(`/api/patients/${patientId}`).then(res => res.json()),
+        apiFetch(`/api/patients/${patientId}/appointments`).then(res => res.json()),
+        apiFetch(`/api/patients/${patientId}/active-treatments`).then(res => res.json())
       ]).then(([patientData, historyData, treatmentsData]) => {
         if (patientData.success) setPatient(patientData.patient);
         if (historyData.success) setAppointments(historyData.appointments);

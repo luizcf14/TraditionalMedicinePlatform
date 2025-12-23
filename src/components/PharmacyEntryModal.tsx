@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { apiFetch } from '../services/api';
 
 interface PharmacyEntryModalProps {
     type: 'plant' | 'treatment';
@@ -41,7 +42,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
     useEffect(() => {
         if (isOpen && type === 'treatment') {
             // Fetch plants for the ingredient selector
-            fetch('http://localhost:3001/api/pharmacy/plants')
+            apiFetch('/api/pharmacy/plants')
                 .then(res => res.json())
                 .then(data => {
                     if (data.success) setAvailablePlants(data.plants);
@@ -83,8 +84,8 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
 
         const isEdit = !!initialData?.id;
         let endpoint = type === 'plant'
-            ? 'http://localhost:3001/api/pharmacy/plants'
-            : 'http://localhost:3001/api/pharmacy/treatments';
+            ? `/api/pharmacy/plants`
+            : `/api/pharmacy/treatments`;
 
         if (isEdit) {
             endpoint += `/${initialData.id}`;
@@ -96,7 +97,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
         }
 
         try {
-            const response = await fetch(endpoint, {
+            const response = await apiFetch(endpoint, {
                 method: isEdit ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),

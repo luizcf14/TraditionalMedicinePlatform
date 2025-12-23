@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Screen, User } from '../types';
+import { apiFetch } from '../services/api';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -24,7 +25,7 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
       if (searchQuery.length >= 2) {
         setIsSearching(true);
         try {
-          const res = await fetch(`http://localhost:3001/api/search?q=${searchQuery}`);
+          const res = await apiFetch(`/api/search?q=${searchQuery}`);
           const data = await res.json();
           if (data.success) {
             setResults({

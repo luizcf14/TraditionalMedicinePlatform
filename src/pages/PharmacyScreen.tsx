@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Screen, Plant, Treatment } from '../types';
+import { apiFetch } from '../services/api';
 
 interface PharmacyScreenProps {
     onNavigate: (screen: Screen, patientId?: string) => void;
@@ -31,8 +32,8 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
         setIsLoading(true);
         try {
             const [plantsRes, treatmentsRes] = await Promise.all([
-                fetch('http://localhost:3001/api/pharmacy/plants'),
-                fetch('http://localhost:3001/api/pharmacy/treatments')
+                apiFetch('/api/pharmacy/plants'),
+                apiFetch('/api/pharmacy/treatments')
             ]);
 
             const plantsData = await plantsRes.json();
@@ -90,10 +91,10 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
 
         try {
             const endpoint = isPlant
-                ? `http://localhost:3001/api/pharmacy/plants/${selectedItem.id}`
-                : `http://localhost:3001/api/pharmacy/treatments/${selectedItem.id}`;
+                ? `/api/pharmacy/plants/${selectedItem.id}`
+                : `/api/pharmacy/treatments/${selectedItem.id}`;
 
-            const res = await fetch(endpoint, { method: 'DELETE' });
+            const res = await apiFetch(endpoint, { method: 'DELETE' });
             const data = await res.json();
 
             if (data.success) {

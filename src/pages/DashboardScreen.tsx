@@ -1,5 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { Screen } from '../types';
+import DailyReportDocument from '../components/DailyReportDocument';
+import { apiFetch } from '../services/api';
 
 interface DashboardScreenProps {
   onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -7,6 +10,7 @@ interface DashboardScreenProps {
 
 const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
   const [appointments, setAppointments] = useState<any[]>([]);
+  const [allTodayAppointments, setAllTodayAppointments] = useState<any[]>([]); // For the report
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ treatmentsCount: 0, prescriptionsCount: 0, patientsCount: 0 });
 
@@ -21,19 +25,21 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
         const startDate = new Date(year, month, day, 0, 0, 0).toISOString();
         const endDate = new Date(year, month, day, 23, 59, 59, 999).toISOString();
 
-        const res = await fetch(`http://localhost:3001/api/appointments?startDate=${startDate}&endDate=${endDate}`);
+        const res = await apiFetch(`/api/appointments?startDate=${startDate}&endDate=${endDate}`);
         const data = await res.json();
 
         if (data.success) {
-          // Filter for scheduled appointments only, and sort by date
-          const scheduled = data.appointments
-            .filter((apt: any) => apt.status === 'Agendada')
-            .sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          // Store raw list for report (sorted by date)
+          const all = data.appointments.sort((a: any, b: any) => new Date(a.date).getTime() - new Date(b.date).getTime());
+          setAllTodayAppointments(all);
+
+          // Filter for scheduled appointments generally used for Queue
+          const scheduled = all.filter((apt: any) => apt.status === 'Agendada');
           setAppointments(scheduled);
         }
 
         // Fetch Stats
-        const statsRes = await fetch('http://localhost:3001/api/dashboard/stats');
+        const statsRes = await apiFetch('/api/dashboard/stats');
         const statsData = await statsRes.json();
         if (statsData.success) {
           setStats({
@@ -53,11 +59,41 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
     fetchTodayAppointments();
   }, []);
 
+  const handlePrintReport = () => {
+    window.print();
+  };
+
   const nextAppointment = appointments.length > 0 ? appointments[0] : null;
   const queue = appointments.length > 1 ? appointments.slice(1) : [];
 
   return (
     <div className="max-w-6xl mx-auto flex flex-col gap-8">
+      <style>
+        {`
+          @media print {
+            html, body {
+              overflow: visible !important;
+              height: auto !important;
+            }
+            #root {
+              display: none !important;
+            }
+            #daily-report-section {
+              display: block !important;
+              position: relative !important;
+              width: 100% !important;
+              height: auto !important;
+              background: white;
+            }
+          }
+        `}
+      </style>
+
+      {createPortal(
+        <DailyReportDocument appointments={allTodayAppointments} date={new Date()} />,
+        document.body
+      )}
+
       {/* Header Section */}
       <div className="flex flex-wrap justify-between items-end gap-4">
         <div className="flex flex-col gap-1">
@@ -65,7 +101,9 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
           <p className="text-text-muted text-base font-normal">Resumo das atividades do centro de saúde hoje, {new Date().toLocaleDateString('pt-BR', { day: 'numeric', month: 'long' })}.</p>
         </div>
         <div className="flex gap-3">
-          <button className="flex items-center gap-2 bg-white border border-border-light text-text-main px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
+          <button
+            onClick={handlePrintReport}
+            className="flex items-center gap-2 bg-white border border-border-light text-text-main px-4 py-2 rounded-lg text-sm font-medium hover:bg-gray-50 transition-colors shadow-sm">
             <span className="material-symbols-outlined text-[20px]">print</span>
             Relatório Diário
           </button>
@@ -218,7 +256,7 @@ const DashboardScreen: React.FC<DashboardScreenProps> = ({ onNavigate }) => {
       {/* Stats Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { icon: 'medical_services', title: 'Atendimentos Hoje', value: appointments.length.toString(), trend: null, color: 'text-primary' },
+          { icon: 'medical_services', title: 'Atendimentos Em Aberto', value: appointments.length.toString(), trend: null, color: 'text-primary' },
           { icon: 'assignment_turned_in', title: 'Total Prescrições', value: stats.prescriptionsCount.toString(), sub: 'Emitidas', color: 'text-[#8B5E3C]' },
           { icon: 'spa', title: 'Farmácia Viva', value: stats.treatmentsCount.toString(), sub: 'Tratamentos', color: 'text-green-600' },
           { icon: 'groups', title: 'Total de Pacientes', value: stats.patientsCount.toString(), sub: 'Cadastrados', color: 'text-blue-600' },

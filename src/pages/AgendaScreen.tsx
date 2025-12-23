@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Screen, Appointment } from '../types';
 import AppointmentDetailsModal from '../components/AppointmentDetailsModal';
+import { apiFetch } from '../services/api';
 
 interface AgendaScreenProps {
     onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -30,7 +31,7 @@ const AgendaScreen: React.FC<AgendaScreenProps> = ({ onNavigate }) => {
         const endDate = new Date(year, month + 1, 0, 23, 59, 59, 999).toISOString();
 
         try {
-            const res = await fetch(`http://localhost:3001/api/appointments?startDate=${startDate}&endDate=${endDate}`);
+            const res = await apiFetch(`/api/appointments?startDate=${startDate}&endDate=${endDate}`);
             const data = await res.json();
             if (data.success) {
                 setAppointments(data.appointments);

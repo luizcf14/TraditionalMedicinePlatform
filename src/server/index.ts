@@ -318,9 +318,12 @@ app.get('/api/appointments', async (req, res) => {
                 a.reason,
                 a.patient_id as "patientId",
                 p.name as "patientName", 
-                p.image_url as "patientImage"
+                p.image_url as "patientImage",
+                pr.diagnosis,
+                pr.notes as "prescriptionNotes"
             FROM appointments a
             JOIN patients p ON a.patient_id = p.id
+            LEFT JOIN prescriptions pr ON a.id = pr.appointment_id
         `;
         const params: any[] = [];
 

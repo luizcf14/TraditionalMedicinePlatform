@@ -1,6 +1,7 @@
 import React from 'react';
 
 import { User } from '../types';
+import { apiFetch } from '../services/api';
 
 interface LoginScreenProps {
   onLogin: (user: User) => void;
@@ -18,7 +19,7 @@ const LoginScreen: React.FC<LoginScreenProps> = ({ onLogin }) => {
     setError('');
 
     try {
-      const response = await fetch('http://localhost:3001/api/login', {
+      const response = await apiFetch('/api/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password }),

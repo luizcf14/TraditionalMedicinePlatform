@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Screen, Patient } from '../types';
+import { apiFetch } from '../services/api';
 
 interface NewAppointmentScreenProps {
     onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -24,7 +25,7 @@ const NewAppointmentScreen: React.FC<NewAppointmentScreenProps> = ({ onNavigate 
         setIsLoading(true);
         setHasSearched(true);
         try {
-            const response = await fetch(`http://localhost:3001/api/patients?q=${encodeURIComponent(searchTerm)}`);
+            const response = await apiFetch(`/api/patients?q=${encodeURIComponent(searchTerm)}`);
             const data = await response.json();
             if (data.success) {
                 setPatients(data.patients);
@@ -39,7 +40,7 @@ const NewAppointmentScreen: React.FC<NewAppointmentScreenProps> = ({ onNavigate 
     const handleSelectPatient = async (patientId: string) => {
         setIsLoading(true);
         try {
-            const response = await fetch('http://localhost:3001/api/appointments', {
+            const response = await apiFetch('/api/appointments', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
