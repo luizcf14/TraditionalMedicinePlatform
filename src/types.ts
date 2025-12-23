@@ -98,3 +98,8 @@ export interface Treatment {
   contraindications: string;
   notes: string;
 }
+
+export interface ICDCode {
+  code: string;
+  description: string;
+}

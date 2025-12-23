@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS icd_10 (
+    code VARCHAR(10) PRIMARY KEY,
+    description TEXT NOT NULL
+);
