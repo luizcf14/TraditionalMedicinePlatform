@@ -637,6 +637,7 @@ app.get('/api/pharmacy/treatments', async (req, res) => {
             duration: t.duration,
             frequency: t.frequency,
             sideEffects: t.side_effects,
+            contraindications: t.contraindications,
             notes: t.notes
         }));
         res.json({ success: true, treatments });

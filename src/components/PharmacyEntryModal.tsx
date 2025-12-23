@@ -205,6 +205,15 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                         />
                                     </div>
                                 </div>
+                                <div className="mt-4">
+                                    <label className="block text-sm font-medium text-red-600 mb-1">Contra Indicações</label>
+                                    <input
+                                        value={formData.contraindications || ''}
+                                        className="w-full rounded-lg border border-red-100 bg-red-50 px-4 py-2 focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none transition-all"
+                                        placeholder="Ex: Gestantes, Hipertensos"
+                                        onChange={e => handleChange('contraindications', e.target.value)}
+                                    />
+                                </div>
                             </>
                         ) : (
                             // TREATMENT FORM
@@ -323,6 +332,15 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                         className="w-full rounded-lg border border-red-100 bg-red-50 px-4 py-2 focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none transition-all"
                                         placeholder="Ex: Sonolência"
                                         onChange={e => handleChange('sideEffects', e.target.value)}
+                                    />
+                                </div>
+                                <div>
+                                    <label className="block text-sm font-medium text-red-600 mb-1">Contra Indicações</label>
+                                    <input
+                                        value={formData.contraindications || ''}
+                                        className="w-full rounded-lg border border-red-100 bg-red-50 px-4 py-2 focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none transition-all"
+                                        placeholder="Ex: Gestantes, Crianças menores de 2 anos"
+                                        onChange={e => handleChange('contraindications', e.target.value)}
                                     />
                                 </div>
                             </>

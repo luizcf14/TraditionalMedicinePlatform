@@ -95,5 +95,6 @@ export interface Treatment {
   duration: string;
   frequency: string;
   sideEffects: string;
+  contraindications: string;
   notes: string;
 }
