@@ -24,7 +24,9 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
     bloodType: '',
     allergies: '',
     conditions: '',
-    image: ''
+    image: '',
+    status: '',
+    statusOverride: ''
   });
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -56,7 +58,8 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
               bloodType: p.bloodType || '',
               allergies: p.allergies || '',
               conditions: p.conditions || '',
-              image: p.image || ''
+              image: p.image || '',
+              status: p.status || ''
             }));
           }
         })
@@ -150,7 +153,8 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
         bloodType: formData.bloodType,
         allergies: formData.allergies,
         conditions: formData.conditions,
-        image: formData.image
+        image: formData.image,
+        statusOverride: (formData as any).statusOverride
       };
 
       const url = patientId
@@ -204,6 +208,34 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
           </p>
         </div>
         <div className="flex items-center gap-3">
+          {patientId && (
+            <button
+              onClick={async () => {
+                if (window.confirm("ATENÇÃO: Isso excluirá permanentemente o paciente e todos os seus registros de consultas e prescrições. Essa ação não pode ser desfeita.\n\nDeseja continuar?")) {
+                  setLoading(true);
+                  try {
+                    const res = await fetch(`http://localhost:3001/api/patients/${patientId}`, { method: 'DELETE' });
+                    const data = await res.json();
+                    if (data.success) {
+                      alert('Paciente excluído.');
+                      onNavigate(Screen.PATIENT_LIST);
+                    } else {
+                      alert('Erro: ' + data.message);
+                    }
+                  } catch (err) {
+                    alert('Erro de conexão.');
+                  } finally {
+                    setLoading(false);
+                  }
+                }
+              }}
+              className="px-4 py-2 rounded-lg border border-red-200 text-red-600 bg-red-50 font-medium text-sm hover:bg-red-100 transition-colors flex items-center gap-2"
+            >
+              <span className="material-symbols-outlined text-[18px]">delete</span>
+              Excluir
+            </button>
+          )}
+
           <button
             onClick={() => onNavigate(Screen.PATIENT_LIST)}
             className="px-4 py-2 rounded-lg border border-border-light text-text-main bg-white font-medium text-sm hover:bg-background-light transition-colors flex items-center gap-2"
@@ -307,7 +339,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
                     placeholder="Como consta no documento oficial" type="text"
                   />
                 </div>
-                <div>
+                <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-text-main mb-2">Nome Social (Opcional)</label>
                   <input
                     name="socialName" value={formData.socialName} onChange={handleChange}
@@ -315,23 +347,21 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
                     placeholder="Nome pelo qual prefere ser chamado" type="text"
                   />
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-main mb-2">Data de Nascimento</label>
-                    <input
-                      name="dob" value={formData.dob} onChange={handleChange}
-                      className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
-                      type="date"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-main mb-2">Sexo Biológico</label>
-                    <select name="sex" value={formData.sex} onChange={handleChange} className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3">
-                      <option value="">Selecione</option>
-                      <option value="Masculino">Masculino</option>
-                      <option value="Feminino">Feminino</option>
-                    </select>
-                  </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-main mb-2">Data de Nascimento</label>
+                  <input
+                    name="dob" value={formData.dob} onChange={handleChange}
+                    className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                    type="date"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-main mb-2">Sexo Biológico</label>
+                  <select name="sex" value={formData.sex} onChange={handleChange} className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3">
+                    <option value="">Selecione</option>
+                    <option value="Masculino">Masculino</option>
+                    <option value="Feminino">Feminino</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -450,6 +480,33 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
                   rows={3}
                 />
               </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-1">Condições Crônicas</label>
+                <textarea
+                  name="conditions" value={formData.conditions} onChange={handleChange}
+                  className="block w-full px-3 py-2 rounded-lg border border-border-light bg-white text-sm focus:ring-primary focus:border-primary"
+                  placeholder="Ex: Hipertensão, Diabetes..."
+                  rows={3}
+                />
+              </div>
+
+              {patientId && (
+                <div className="pt-4 border-t border-border-light mt-2">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-1">Status do Paciente</label>
+                  <p className="text-xs text-text-muted mb-2">Use com cautela para registrar óbito ou arquivamento.</p>
+                  <select
+                    name="statusOverride"
+                    value={(formData as any).statusOverride || ''}
+                    onChange={handleChange}
+                    className="block w-full px-3 py-2 rounded-lg border border-border-light bg-white text-sm focus:ring-primary focus:border-primary"
+                  >
+                    <option value="">Manter Atual ({formData.status || 'Automático'})</option>
+                    <option value="Óbito">Óbito (Falecimento)</option>
+                    <option value="Arquivo Morto">Arquivo Morto (Inativo)</option>
+                    <option value="Ativo">Ativo</option>
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-1">Condições Crônicas</label>
                 <textarea

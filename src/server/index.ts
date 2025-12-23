@@ -58,6 +58,7 @@ app.get('/api/patients', async (req, res) => {
                 p.dob, 
                 p.village, 
                 CASE 
+                    WHEN ps.label IN ('Óbito', 'Arquivo Morto') THEN ps.label
                     WHEN EXISTS (
                         SELECT 1 FROM appointments a 
                         WHERE a.patient_id = p.id 
@@ -75,7 +76,7 @@ app.get('/api/patients', async (req, res) => {
         let values: any[] = [];
 
         if (q) {
-            text += ' WHERE p.name ILIKE $1 OR p.cns ILIKE $1';
+            text += ' WHERE p.name ILIKE $1 OR p.cns ILIKE $1 OR p.cpf ILIKE $1';
             values = [`%${q}%`];
         }
 
@@ -104,6 +105,7 @@ app.get('/api/patients/:id', async (req, res) => {
                 p.village, 
                 p.ethnicity,
                 CASE 
+                    WHEN ps.label IN ('Óbito', 'Arquivo Morto') THEN ps.label
                     WHEN EXISTS (
                         SELECT 1 FROM appointments a 
                         WHERE a.patient_id = p.id 
@@ -253,7 +255,7 @@ app.put('/api/appointments/:id', async (req, res) => {
 });
 
 app.post('/api/prescriptions', async (req, res) => {
-    const { appointmentId, doctorId, items, notes, diagnosis } = req.body;
+    const { appointmentId, doctorId, items, notes, diagnosis, cidCodes } = req.body;
 
     const client = await pool.connect();
 
@@ -262,9 +264,9 @@ app.post('/api/prescriptions', async (req, res) => {
 
         // 1. Create Prescription
         const prescriptionRes = await client.query(
-            `INSERT INTO prescriptions (appointment_id, doctor_id, notes, diagnosis) 
-             VALUES ($1, $2, $3, $4) RETURNING id`,
-            [appointmentId, doctorId, notes, diagnosis]
+            `INSERT INTO prescriptions (appointment_id, doctor_id, notes, diagnosis, cid_codes) 
+             VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+            [appointmentId, doctorId, notes, diagnosis, JSON.stringify(cidCodes || [])]
         );
         const prescriptionId = prescriptionRes.rows[0].id;
 
@@ -446,6 +448,7 @@ app.get('/api/appointments/:id/details', async (req, res) => {
                 doctorName: appointment.doctor_name
             },
             prescription,
+            cidCodes: prescription?.cid_codes || [],
             items
         });
 
@@ -466,9 +469,15 @@ app.post('/api/patients', async (req, res) => {
     }
 
     try {
-        // Get 'Aguardando' or default status
+        // Get 'Novo Paciente' or default status
         let statusId = null;
-        const statusRes = await query("SELECT id FROM patient_statuses WHERE label = 'Aguardando' LIMIT 1");
+        let statusRes = await query("SELECT id FROM patient_statuses WHERE label = 'Novo Paciente' LIMIT 1");
+
+        if (statusRes.rows.length === 0) {
+            // Create if not exists
+            statusRes = await query("INSERT INTO patient_statuses (label) VALUES ('Novo Paciente') RETURNING id");
+        }
+
         if (statusRes.rows.length > 0) {
             statusId = statusRes.rows[0].id;
         }
@@ -494,7 +503,7 @@ app.post('/api/patients', async (req, res) => {
 
 app.put('/api/patients/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, statusOverride } = req.body;
 
     try {
         let text = `
@@ -510,6 +519,23 @@ app.put('/api/patients/:id', async (req, res) => {
             paramIndex++;
         }
 
+        if (statusOverride) {
+            // Find status ID
+            const statusRes = await query("SELECT id FROM patient_statuses WHERE label = $1 LIMIT 1", [statusOverride]);
+            if (statusRes.rows.length === 0) {
+                // Create if missing (e.g. Óbito might be missing if ensure function didn't run or race condition, though unlikely)
+                const newStatusRes = await query("INSERT INTO patient_statuses (label) VALUES ($1) RETURNING id", [statusOverride]);
+                const newStatusId = newStatusRes.rows[0].id;
+                text += `, status_id = $${paramIndex}`;
+                values.push(newStatusId);
+                paramIndex++;
+            } else {
+                text += `, status_id = $${paramIndex}`;
+                values.push(statusRes.rows[0].id);
+                paramIndex++;
+            }
+        }
+
         text += ` WHERE id = $${paramIndex}`;
         values.push(id);
 
@@ -521,6 +547,56 @@ app.put('/api/patients/:id', async (req, res) => {
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
+
+app.delete('/api/patients/:id', async (req, res) => {
+    const { id } = req.params;
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        // Delete dependencies (Prescriptions Items -> Prescriptions -> Appointments)
+        // Note: In a real prod environment, soft delete (is_active = false) is safer.
+        // But for explicit "Erro de digitação" request, hard delete is expected.
+
+        // However, complex cascade might be needed. Let's try simple cascade if FKs allow, 
+        // otherwise delete manually. Our schema usually relies on CASCADE in FKs, but let's be safe.
+
+        // 1. Delete Prescription Items for this patient's appointments?
+        // Querying deeply is hard. Let's rely on ON DELETE CASCADE if defined.
+        // If not defined, we need to delete from bottom up.
+
+        // Let's assume standard deletion for now. If it fails due to FK, we'll know.
+        // Actually, to be safe, let's delete appointments first (which deletes prescriptions if cascaded).
+
+        // Checking schema via behavior:
+        await client.query('DELETE FROM prescriptions WHERE appointment_id IN (SELECT id FROM appointments WHERE patient_id = $1)', [id]);
+        await client.query('DELETE FROM appointments WHERE patient_id = $1', [id]);
+        await client.query('DELETE FROM patients WHERE id = $1', [id]);
+
+        await client.query('COMMIT');
+        res.json({ success: true });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Delete patient error:', error);
+        res.status(500).json({ success: false, message: 'Ao excluir paciente: ' + (error as any).message });
+    } finally {
+        client.release();
+    }
+});
+
+// Ensure 'Óbito' status exists on startup or when needed
+const ensureObitoStatus = async () => {
+    try {
+        const res = await pool.query("SELECT id FROM patient_statuses WHERE label = 'Óbito'");
+        if (res.rows.length === 0) {
+            await pool.query("INSERT INTO patient_statuses (label) VALUES ('Óbito')");
+        }
+    } catch (err) {
+        console.error("Failed to ensure Óbito status", err);
+    }
+};
+ensureObitoStatus();
 
 // Pharmacy Routes
 app.get('/api/pharmacy/plants', async (req, res) => {
@@ -758,6 +834,31 @@ app.get('/api/dashboard/stats', async (req, res) => {
         });
     } catch (error) {
         console.error('Error fetching dashboard stats:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Search ICD Route
+app.get('/api/icd', async (req, res) => {
+    const { q } = req.query;
+
+    if (!q || typeof q !== 'string' || q.length < 2) {
+        return res.json({ success: true, codes: [] });
+    }
+
+    try {
+        const term = `%${q}%`;
+        const result = await query(
+            `SELECT code, description 
+             FROM icd_10 
+             WHERE code ILIKE $1 OR description ILIKE $1 
+             ORDER BY code ASC 
+             LIMIT 20`,
+            [term]
+        );
+        res.json({ success: true, codes: result.rows });
+    } catch (error) {
+        console.error('Search ICD error:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });

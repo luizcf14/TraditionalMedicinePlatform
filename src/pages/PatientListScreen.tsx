@@ -90,7 +90,7 @@ const PatientListScreen: React.FC<PatientListScreenProps> = ({ onNavigate }) => 
             <span>Em Tratamento</span>
           </button>
           <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-background-light text-text-muted hover:bg-gray-200 text-sm font-medium transition-colors border border-transparent">
-            <span>Alta Médica</span>
+            <span>Ativo</span>
           </button>
           <button className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-background-light text-text-muted hover:bg-gray-200 text-sm font-medium transition-colors border border-transparent">
             <span>Recentes</span>
@@ -138,10 +138,12 @@ const PatientListScreen: React.FC<PatientListScreenProps> = ({ onNavigate }) => 
                     const badgeColors: Record<string, string> = {
                       'Em Tratamento': 'bg-green-100 text-green-800 border-green-200',
                       'Acompanhamento': 'bg-amber-100 text-amber-800 border-amber-200',
-                      'Alta Médica': 'bg-gray-100 text-gray-600 border-gray-200',
+                      'Ativo': 'bg-gray-100 text-gray-600 border-gray-200',
                       'Triagem': 'bg-blue-100 text-blue-800 border-blue-200',
                       'Concluido': 'bg-gray-100 text-gray-800 border-gray-200',
-                      'Aguardando': 'bg-yellow-100 text-yellow-800 border-yellow-200'
+                      'Aguardando': 'bg-yellow-100 text-yellow-800 border-yellow-200',
+                      'Novo Paciente': 'bg-teal-100 text-teal-800 border-teal-200',
+                      'Óbito': 'bg-slate-800 text-white border-slate-900'
                     };
                     const statusColor = badgeColors[patient.status] || 'bg-gray-100';
                     const dotColor = (patient.status === 'Em Tratamento' || patient.status === 'Concluido') ? 'bg-green-500' :

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Screen, Patient, Plant, Treatment } from '../types';
+import { Screen, Patient, Plant, Treatment, ICDCode } from '../types';
 import PrescriptionDocument from '../components/PrescriptionDocument';
 
 interface PrescriptionScreenProps {
@@ -27,6 +27,11 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
   const [items, setItems] = useState<PrescriptionItemState[]>([]);
   const [notes, setNotes] = useState('');
   const [diagnosis, setDiagnosis] = useState('');
+
+  // ICD State
+  const [icdResults, setIcdResults] = useState<ICDCode[]>([]);
+  const [selectedCids, setSelectedCids] = useState<ICDCode[]>([]);
+
   const [isSaving, setIsSaving] = useState(false);
 
   // Chronic Conditions Edit State
@@ -221,6 +226,14 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       alert('Erro: Nenhum atendimento vinculado. Inicie pelo "Novo Atendimento".');
       return;
     }
+
+    // Block inactive patients
+    const isInactive = patient?.status === 'Óbito' || (patient?.status as string) === 'Arquivo Morto';
+    if (isInactive) {
+      alert('Ação bloqueada: Paciente inativo (Óbito ou Arquivo Morto).');
+      return;
+    }
+
     if (items.length === 0 && !notes) {
       alert('Adicione itens ou orientações para salvar.');
       return;
@@ -242,7 +255,8 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
           doctorId: null, // Backend handles login check later, MVP uses seed
           items,
           notes,
-          diagnosis
+          diagnosis,
+          cidCodes: selectedCids
         })
       });
       const data = await response.json();
@@ -375,6 +389,12 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       {/* Printable Section via Portal to Body */}
       {createPortal(
         <div id="printable-section" className="hidden print:block text-black font-sans">
+          {patient && (patient.status === 'Óbito' || (patient.status as string) === 'Arquivo Morto') && (
+            <div className="bg-red-100 border-l-4 border-red-500 text-red-700 p-4 mb-4" role="alert">
+              <p className="font-bold">Atenção</p>
+              <p>Este paciente está inativo. Não é possível emitir novas prescrições.</p>
+            </div>
+          )}
           {patient && (
             <div className="flex flex-col gap-6">
               {/* Header */}
@@ -401,12 +421,23 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
               </div>
 
               {/* Diagnosis (Printable) */}
-              {diagnosis && (
+              {(diagnosis || selectedCids.length > 0) && (
                 <div className="mb-4">
                   <h2 className="text-lg font-bold mb-2 uppercase tracking-wide border-l-4 border-red-500 pl-2">Queixa / Diagnóstico</h2>
-                  <div className="bg-red-50 p-3 rounded text-sm text-gray-800 border border-red-100 italic">
-                    {diagnosis}
-                  </div>
+                  {diagnosis && (
+                    <div className="bg-red-50 p-3 rounded text-sm text-gray-800 border border-red-100 italic mb-2">
+                      {diagnosis}
+                    </div>
+                  )}
+                  {selectedCids.length > 0 && (
+                    <div className="flex flex-wrap gap-2">
+                      {selectedCids.map(cid => (
+                        <span key={cid.code} className="bg-white border border-gray-300 text-gray-700 font-bold px-2 py-1 rounded text-xs shadow-sm">
+                          CID: {cid.code} - {cid.description}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -730,6 +761,65 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
               rows={3}
               placeholder="Descreva os sintomas, queixas do paciente ou diagnóstico identificado..."
             />
+
+            {/* ICD Search */}
+            <div className="mt-4 pt-4 border-t border-border-light">
+              <label className="block text-sm font-bold text-text-main mb-2">Código CID (Opcional)</label>
+              <div className="relative mb-2">
+                <input
+                  type="text"
+                  placeholder="Buscar por código ou nome (Ex: J00, Gripe...)"
+                  className="w-full pl-10 pr-4 py-2 border border-border-light rounded-lg text-sm focus:ring-2 focus:ring-primary/50"
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val.length >= 2) {
+                      fetch(`http://localhost:3001/api/icd?q=${encodeURIComponent(val)}`)
+                        .then(r => r.json())
+                        .then(d => {
+                          if (d.success) setIcdResults(d.codes);
+                        });
+                    } else {
+                      setIcdResults([]);
+                    }
+                  }}
+                />
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-text-muted textlg">search</span>
+
+                {/* Results Dropdown */}
+                {icdResults.length > 0 && (
+                  <div className="absolute z-10 w-full bg-white border border-border-light rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto">
+                    {icdResults.map(code => (
+                      <button
+                        key={code.code}
+                        onClick={() => {
+                          if (!selectedCids.some(c => c.code === code.code)) {
+                            setSelectedCids([...selectedCids, code]);
+                          }
+                          setIcdResults([]); // Clear results after select (or keep open?) - Closing is better
+                          // Also clear input? No, user might want to search more.
+                        }}
+                        className="w-full text-left px-4 py-2 hover:bg-background-light text-sm flex justify-between items-center"
+                      >
+                        <span><span className="font-bold">{code.code}</span> - {code.description}</span>
+                        <span className="material-symbols-outlined text-primary text-sm">add</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Selected CIDs with Remove */}
+              <div className="flex flex-wrap gap-2">
+                {selectedCids.map(cid => (
+                  <div key={cid.code} className="bg-blue-50 text-blue-800 border border-blue-200 px-3 py-1 rounded-full text-xs font-semibold flex items-center gap-2">
+                    <span>{cid.code} - {cid.description}</span>
+                    <button onClick={() => setSelectedCids(selectedCids.filter(c => c.code !== cid.code))} className="hover:text-red-600">
+                      <span className="material-symbols-outlined text-[14px]">close</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
           </section>
 
           {/* 2. Prescription Items */}

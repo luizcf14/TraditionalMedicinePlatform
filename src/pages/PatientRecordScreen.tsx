@@ -60,6 +60,8 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
   const [isPrinting, setIsPrinting] = useState(false);
   const [isPrintingSummary, setIsPrintingSummary] = useState(false);
 
+  const isInactive = patient?.status === 'Óbito' || (patient?.status as string) === 'Arquivo Morto';
+
   useEffect(() => {
     if ((printingPrescription && isPrinting) || isPrintingSummary) {
       // Give time for Portal to render
@@ -154,6 +156,16 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
       </div>
 
       {/* Patient Header Card */}
+      {isInactive && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center gap-3 animate-pulse">
+          <span className="material-symbols-outlined text-red-600">block</span>
+          <div>
+            <h3 className="font-bold text-red-800">Prontuário Inativo</h3>
+            <p className="text-sm text-red-700">Este paciente está marcado como <strong>{patient.status}</strong>. Novos agendamentos e prescrições estão bloqueados.</p>
+          </div>
+        </div>
+      )}
+
       <div className="bg-surface-light rounded-xl shadow-sm border border-border-light p-6">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
           <div className="flex items-center gap-6">
@@ -352,7 +364,11 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
           <div className="bg-surface-light rounded-xl shadow-sm border border-border-light overflow-hidden">
             <div className="p-4 border-b border-border-light flex justify-between items-center bg-background-light">
               <h3 className="font-bold text-text-main">Tratamentos Ativos</h3>
-              <button className="text-primary hover:bg-primary/10 p-1 rounded transition-colors">
+              <button
+                className={`text-primary hover:bg-primary/10 p-1 rounded transition-colors ${isInactive ? 'opacity-50 cursor-not-allowed' : ''}`}
+                disabled={isInactive}
+                title={isInactive ? 'Bloqueado: Paciente Inativo' : 'Adicionar Tratamento'}
+              >
                 <span className="material-symbols-outlined text-lg">add</span>
               </button>
             </div>
@@ -414,7 +430,11 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
                   </p>
                 </div>
               </div>
-              <button className="w-full py-2 text-sm text-text-main border border-border-light rounded-lg hover:bg-background-light transition-colors">
+              <button
+                className={`w-full py-2 text-sm text-text-main border border-border-light rounded-lg hover:bg-background-light transition-colors ${isInactive ? 'opacity-50 cursor-not-allowed bg-gray-50' : ''}`}
+                disabled={isInactive}
+                title={isInactive ? 'Bloqueado: Paciente Inativo' : 'Agendar novo retorno'}
+              >
                 Agendar novo retorno
               </button>
             </div>

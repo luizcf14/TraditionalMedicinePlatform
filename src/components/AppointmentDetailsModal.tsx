@@ -14,6 +14,7 @@ interface AppointmentDetails {
         dosage: string;
         frequency: string;
     }[];
+    cidCodes: { code: string; description: string }[];
 }
 
 const AppointmentDetailsModal: React.FC<{
@@ -78,15 +79,26 @@ const AppointmentDetailsModal: React.FC<{
                         </div>
 
                         {/* Diagnosis */}
-                        {details!.prescription?.diagnosis && (
+                        {(details!.prescription?.diagnosis || details!.cidCodes.length > 0) && (
                             <div className="bg-red-50 p-4 rounded-lg border border-red-100">
                                 <h4 className="font-bold text-sm text-red-800 mb-2 flex items-center gap-2">
                                     <span className="material-symbols-outlined text-base">person_alert</span>
                                     Queixa / Diagnóstico
                                 </h4>
-                                <p className="text-sm text-text-main whitespace-pre-wrap leading-relaxed">
-                                    {details!.prescription.diagnosis}
-                                </p>
+                                {details!.prescription?.diagnosis && (
+                                    <p className="text-sm text-text-main whitespace-pre-wrap leading-relaxed mb-2">
+                                        {details!.prescription.diagnosis}
+                                    </p>
+                                )}
+                                {details!.cidCodes.length > 0 && (
+                                    <div className="flex flex-wrap gap-2 mt-2 pt-2 border-t border-red-200/50">
+                                        {details!.cidCodes.map((cid: any) => (
+                                            <span key={cid.code} className="bg-white text-red-800 border border-red-200 px-2 py-1 rounded text-xs font-bold shadow-sm" title={cid.description}>
+                                                {cid.code} - {cid.description}
+                                            </span>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         )}
 

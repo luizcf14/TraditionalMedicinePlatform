@@ -185,13 +185,21 @@ const NewAppointmentScreen: React.FC<NewAppointmentScreenProps> = ({ onNavigate 
                                     </div>
                                 </div>
 
-                                <button
-                                    onClick={() => handleSelectPatient(patient.id)}
-                                    className="w-full md:w-auto border border-border-light text-text-main hover:border-primary hover:text-primary px-6 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 group"
-                                >
-                                    Selecionar
-                                    <span className="material-symbols-outlined text-[18px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
-                                </button>
+                                <div className="flex flex-col items-end gap-2 w-full md:w-auto">
+                                    {(patient.status === 'Óbito' || patient.status === 'Arquivo Morto') && (
+                                        <span className="bg-red-100 text-red-700 text-xs font-bold px-2 py-1 rounded border border-red-200 uppercase tracking-wide">
+                                            {patient.status} - Bloqueado
+                                        </span>
+                                    )}
+                                    <button
+                                        onClick={() => handleSelectPatient(patient.id)}
+                                        disabled={patient.status === 'Óbito' || patient.status === 'Arquivo Morto'}
+                                        className="w-full md:w-auto border border-border-light text-text-main hover:border-primary hover:text-primary px-6 py-2 rounded-lg font-medium transition-colors flex items-center justify-center gap-2 group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:border-border-light disabled:hover:text-text-main"
+                                    >
+                                        Selecionar
+                                        <span className="material-symbols-outlined text-[18px] group-hover:translate-x-0.5 transition-transform">arrow_forward</span>
+                                    </button>
+                                </div>
                             </div>
                         ))
                     )}
