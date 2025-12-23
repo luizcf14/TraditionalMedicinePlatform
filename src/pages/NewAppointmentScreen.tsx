@@ -47,7 +47,7 @@ const NewAppointmentScreen: React.FC<NewAppointmentScreenProps> = ({ onNavigate 
                 body: JSON.stringify({
                     patientId,
                     date: `${selectedDate}T${selectedTime}:00`,
-                    reason: 'Nova Consulta',
+                    reason: 'Consulta',
                     status: 'Agendada'
                 }),
             });

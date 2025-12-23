@@ -20,7 +20,10 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
     dsei: 'Alto Rio Negro',
     cns: '',
     cpf: '',
-    motherName: ''
+    motherName: '',
+    bloodType: '',
+    allergies: '',
+    conditions: ''
   });
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
@@ -43,7 +46,9 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
               cpf: p.cpf || '',
               motherName: p.motherName || '',
               indigenousName: p.indigenousName || '',
-              // Other fields might not be in DB yet, keeping defaults
+              bloodType: p.bloodType || '',
+              allergies: p.allergies || '',
+              conditions: p.conditions || '',
             }));
           }
         })
@@ -51,7 +56,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
     }
   }, [patientId]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -67,7 +72,10 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
         cns: formData.cns,
         cpf: formData.cpf,
         motherName: formData.motherName || 'Não Informado',
-        indigenousName: formData.indigenousName
+        indigenousName: formData.indigenousName,
+        bloodType: formData.bloodType,
+        allergies: formData.allergies,
+        conditions: formData.conditions
       };
 
       const url = patientId
@@ -260,6 +268,52 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
                   name="motherName" value={formData.motherName} onChange={handleChange}
                   className="block w-full px-3 py-2 rounded-lg border border-border-light bg-white text-sm focus:ring-primary focus:border-primary"
                   placeholder="Nome da mãe" type="text"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Health Info */}
+          <div className="bg-white rounded-xl border border-border-light p-6 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="font-bold text-text-main">Dados de Saúde</h4>
+            </div>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-1">Tipo Sanguíneo</label>
+                <select
+                  name="bloodType"
+                  value={formData.bloodType}
+                  onChange={handleChange}
+                  className="block w-full px-3 py-2 rounded-lg border border-border-light bg-white text-sm focus:ring-primary focus:border-primary"
+                >
+                  <option value="">Selecione</option>
+                  <option value="A+">A+</option>
+                  <option value="A-">A-</option>
+                  <option value="B+">B+</option>
+                  <option value="B-">B-</option>
+                  <option value="AB+">AB+</option>
+                  <option value="AB-">AB-</option>
+                  <option value="O+">O+</option>
+                  <option value="O-">O-</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-1">Alergias</label>
+                <textarea
+                  name="allergies" value={formData.allergies} onChange={handleChange}
+                  className="block w-full px-3 py-2 rounded-lg border border-border-light bg-white text-sm focus:ring-primary focus:border-primary"
+                  placeholder="Liste as alergias conhecidas..."
+                  rows={3}
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold uppercase tracking-wider text-text-muted mb-1">Condições Crônicas</label>
+                <textarea
+                  name="conditions" value={formData.conditions} onChange={handleChange}
+                  className="block w-full px-3 py-2 rounded-lg border border-border-light bg-white text-sm focus:ring-primary focus:border-primary"
+                  placeholder="Ex: Hipertensão, Diabetes..."
+                  rows={3}
                 />
               </div>
             </div>

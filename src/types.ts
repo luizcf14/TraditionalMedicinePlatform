@@ -23,6 +23,8 @@ export interface Patient {
   lastVisit?: string;
   image: string;
   cns?: string;
+  cpf?: string;
+  indigenousName?: string;
   allergies?: string;
   conditions?: string;
   bloodType?: string;

@@ -278,6 +278,7 @@ app.get('/api/appointments', async (req, res) => {
                 a.date, 
                 a.status, 
                 a.reason,
+                a.patient_id as "patientId",
                 p.name as "patientName", 
                 p.image_url as "patientImage"
             FROM appointments a
@@ -336,7 +337,15 @@ app.get('/api/appointments/:id/details', async (req, res) => {
     try {
         // Fetch Appointment Basics
         const appointmentRes = await query(
-            `SELECT a.*, u.full_name as doctor_name 
+            `SELECT 
+                a.id,
+                a.patient_id as "patientId",
+                a.doctor_id as "doctorId",
+                a.date,
+                a.reason,
+                a.notes,
+                a.status,
+                u.full_name as "doctorName"
              FROM appointments a 
              LEFT JOIN users u ON a.doctor_id = u.id 
              WHERE a.id = $1`,
@@ -386,7 +395,7 @@ app.get('/api/appointments/:id/details', async (req, res) => {
 
 
 app.post('/api/patients', async (req, res) => {
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions } = req.body;
 
     // Basic validation
     if (!name || !village) {
@@ -407,11 +416,11 @@ app.post('/api/patients', async (req, res) => {
         const imageUrl = `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
 
         const text = `
-            INSERT INTO patients (name, dob, village, ethnicity, cns, mother_name, status_id, image_url, indigenous_name, cpf)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            INSERT INTO patients (name, dob, village, ethnicity, cns, mother_name, status_id, image_url, indigenous_name, cpf, blood_type, allergies, conditions)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
             RETURNING id
         `;
-        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, statusId, imageUrl, indigenousName || null, cpf || null];
+        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, statusId, imageUrl, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null];
 
         const result = await query(text, values);
         res.json({ success: true, patientId: result.rows[0].id });
@@ -424,15 +433,15 @@ app.post('/api/patients', async (req, res) => {
 
 app.put('/api/patients/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions } = req.body;
 
     try {
         const text = `
             UPDATE patients 
-            SET name = $1, dob = $2, village = $3, ethnicity = $4, cns = $5, mother_name = $6, indigenous_name = $7, cpf = $8, updated_at = NOW()
-            WHERE id = $9
+            SET name = $1, dob = $2, village = $3, ethnicity = $4, cns = $5, mother_name = $6, indigenous_name = $7, cpf = $8, blood_type = $9, allergies = $10, conditions = $11, updated_at = NOW()
+            WHERE id = $12
         `;
-        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, id];
+        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, id];
 
         await query(text, values);
         res.json({ success: true });

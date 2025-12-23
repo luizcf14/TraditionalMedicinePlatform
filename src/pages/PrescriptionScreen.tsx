@@ -24,6 +24,11 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
   const [notes, setNotes] = useState('');
   const [isSaving, setIsSaving] = useState(false);
 
+  // Chronic Conditions Edit State
+  const [conditions, setConditions] = useState('');
+  const [isEditingConditions, setIsEditingConditions] = useState(false);
+  const [isSavingConditions, setIsSavingConditions] = useState(false);
+
   // New Item Form State
   const [newItemType, setNewItemType] = useState<'Alopático' | 'Tradicional'>('Tradicional');
   const [newItemName, setNewItemName] = useState('');
@@ -36,25 +41,38 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
   // History State
   const [history, setHistory] = useState<any[]>([]);
 
+  const fetchHistory = () => {
+    if (!patientId) return;
+
+    console.log('Fetching history for patient:', patientId);
+    fetch(`http://localhost:3001/api/patients/${patientId}/appointments`)
+      .then(res => res.json())
+      .then(data => {
+        console.log('History data:', data);
+        if (data.success && Array.isArray(data.appointments)) {
+          setHistory(data.appointments.slice(0, 3));
+        } else {
+          setHistory([]);
+        }
+      })
+      .catch(err => console.error('Error fetching history:', err));
+  };
+
   useEffect(() => {
     if (patientId) {
       // Fetch Patient Details
       fetch(`http://localhost:3001/api/patients/${patientId}`)
         .then(res => res.json())
         .then(data => {
-          if (data.success) setPatient(data.patient);
+          if (data.success) {
+            setPatient(data.patient);
+            setConditions(data.patient.conditions || '');
+          }
         })
         .catch(err => console.error(err));
 
-      // Fetch Appointment History
-      fetch(`http://localhost:3001/api/patients/${patientId}/appointments`)
-        .then(res => res.json())
-        .then(data => {
-          if (data.success) {
-            setHistory(data.appointments.slice(0, 3)); // Take 3 most recent
-          }
-        })
-        .catch(err => console.error('Error fetching history:', err));
+      // Fetch History
+      fetchHistory();
     }
   }, [patientId]);
 
@@ -154,6 +172,53 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       alert('Erro de conexão ao salvar.');
     } finally {
       setIsSaving(false);
+    }
+  };
+
+
+
+  const handleSaveConditions = async () => {
+    if (!patientId) return;
+    setIsSavingConditions(true);
+    try {
+      // Need to send all required fields or update backend to accept partial.
+      // Based on current backend implementation for PUT /api/patients/:id, it expects all fields.
+      // We will re-fetch or use existing patient data to fill the gaps.
+      if (!patient) return;
+
+      const body = {
+        name: patient.name,
+        dob: patient.dob,
+        village: patient.village,
+        ethnicity: patient.ethnicity,
+        cns: patient.cns,
+        cpf: patient.cpf,
+        motherName: patient.motherName,
+        indigenousName: patient.indigenousName,
+        bloodType: patient.bloodType,
+        allergies: patient.allergies,
+        conditions: conditions
+      };
+
+      const response = await fetch(`http://localhost:3001/api/patients/${patientId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+
+      if (response.ok) {
+        setIsEditingConditions(false);
+        // Update local patient state
+        setPatient({ ...patient, conditions });
+        alert('Condições atualizadas com sucesso!');
+      } else {
+        alert('Erro ao atualizar condições.');
+      }
+    } catch (error) {
+      console.error(error);
+      alert('Erro de conexão.');
+    } finally {
+      setIsSavingConditions(false);
     }
   };
 
@@ -291,8 +356,12 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
           <div className="bg-surface-light rounded-xl p-4 border border-border-light shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <h3 className="font-bold text-sm uppercase tracking-wider text-text-muted">Histórico Recente</h3>
-              <button className="text-primary hover:text-primary-dark">
-                <span className="material-symbols-outlined text-sm">history</span>
+              <button
+                onClick={fetchHistory}
+                className="text-primary hover:text-primary-dark transition-colors"
+                title="Atualizar Histórico"
+              >
+                <span className="material-symbols-outlined text-sm">refresh</span>
               </button>
             </div>
             <ul className="space-y-3">
@@ -353,26 +422,86 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                       ID: #{patient.id.substring(0, 6)}
                     </span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-4 pt-4 border-t border-border-light w-full">
-                    <div>
-                      <span className="text-xs text-text-muted block">Idade</span>
-                      <span className="font-medium text-text-main">{patient.age} anos</span>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-border-light w-full">
+                    <div className="bg-background-light/50 p-3 rounded-lg">
+                      <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Idade</span>
+                      <span className="font-bold text-lg text-text-main">{patient.age} <span className="text-xs font-normal text-text-muted">anos</span></span>
                     </div>
-                    <div>
-                      <span className="text-xs text-text-muted block">Nascimento</span>
+                    <div className="bg-background-light/50 p-3 rounded-lg">
+                      <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Nascimento</span>
                       <span className="font-medium text-text-main">{patient.dob ? new Date(patient.dob).toLocaleDateString() : '-'}</span>
                     </div>
-                    <div>
-                      <span className="text-xs text-text-muted block">Tipo Sanguíneo</span>
-                      <span className="font-medium text-text-main">{patient.bloodType || '-'}</span>
+                    <div className="bg-background-light/50 p-3 rounded-lg">
+                      <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Tipo Sanguíneo</span>
+                      <span className={`font-bold text-lg ${patient.bloodType ? 'text-primary' : 'text-text-muted'}`}>{patient.bloodType || '-'}</span>
                     </div>
-                    <div>
-                      <span className="text-xs text-text-muted block">Alergias</span>
-                      <span className="font-medium text-red-500">{patient.allergies || 'Nenhuma'}</span>
+                    <div className={`p-3 rounded-lg border ${patient.allergies ? 'bg-red-50 border-red-100' : 'bg-background-light/50 border-transparent'}`}>
+                      <span className={`text-xs font-semibold uppercase tracking-wider block mb-1 ${patient.allergies ? 'text-red-700' : 'text-text-muted'}`}>Alergias</span>
+                      <span className={`font-medium ${patient.allergies ? 'text-red-600' : 'text-text-muted italic'}`}>{patient.allergies || 'Nenhuma'}</span>
                     </div>
+                  </div>
+
+                  {/* Editable Conditions Section */}
+                  <div className="mt-6">
+                    <div className="flex items-center justify-between mb-3">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-orange-500">medical_services</span>
+                        <span className="text-sm font-bold text-text-main uppercase tracking-wider">Condições Crônicas</span>
+                      </div>
+                      {!isEditingConditions ? (
+                        <button
+                          onClick={() => setIsEditingConditions(true)}
+                          className="text-primary hover:text-primary-dark text-xs font-bold uppercase tracking-wide flex items-center gap-1 transition-colors px-3 py-1.5 rounded-full hover:bg-primary/10"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">edit</span>
+                          Editar
+                        </button>
+                      ) : (
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              setIsEditingConditions(false);
+                              setConditions(patient.conditions || '');
+                            }}
+                            className="text-text-muted hover:text-text-main text-xs font-semibold px-3 py-1.5"
+                            disabled={isSavingConditions}
+                          >
+                            Cancelar
+                          </button>
+                          <button
+                            onClick={handleSaveConditions}
+                            className="text-white bg-primary hover:bg-primary-dark text-xs font-bold uppercase tracking-wide px-4 py-1.5 rounded-full shadow-sm disabled:opacity-50 transition-all"
+                            disabled={isSavingConditions}
+                          >
+                            {isSavingConditions ? 'Salvando...' : 'Salvar'}
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {isEditingConditions ? (
+                      <div className="relative">
+                        <textarea
+                          value={conditions}
+                          onChange={(e) => setConditions(e.target.value)}
+                          className="w-full rounded-xl border-2 border-primary/20 bg-white p-4 text-sm focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm"
+                          rows={3}
+                          placeholder="Descreva as condições crônicas do paciente..."
+                          autoFocus
+                        />
+                        <span className="absolute bottom-3 right-3 text-xs text-text-muted">Pressione Salvar para registrar</span>
+                      </div>
+                    ) : (
+                      <div className={`rounded-xl p-4 border ${patient.conditions ? 'bg-orange-50/50 border-orange-100' : 'bg-background-light border-transparent'}`}>
+                        <p className={`text-sm leading-relaxed ${patient.conditions ? 'text-text-main font-medium' : 'text-text-muted italic'}`}>
+                          {patient.conditions || "Nenhuma condição crônica registrada."}
+                        </p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
+
             ) : (
               <div className="p-6 text-center text-text-muted">
                 Carregando dados do paciente...
