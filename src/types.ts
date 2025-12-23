@@ -28,7 +28,7 @@ export interface Patient {
   dob: string;
   village: string;
   ethnicity?: string;
-  status: 'Em Tratamento' | 'Concluido' | 'Aguardando';
+  status: 'Em Tratamento' | 'Concluido' | 'Aguardando' | 'Acompanhamento' | 'Alta Médica' | 'Triagem';
   lastVisit?: string;
   image: string;
   cns?: string;

@@ -1,15 +1,63 @@
+import React, { useState, useEffect } from 'react';
 import { Screen, User } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
   currentScreen: Screen;
-  onNavigate: (screen: Screen) => void;
+  onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
   onLogout: () => void;
   user: User | null;
 }
 
 const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, onLogout, user }) => {
   // ... (existing code)
+
+  // Search State
+  const [searchQuery, setSearchQuery] = useState('');
+  const [isSearching, setIsSearching] = useState(false);
+  const [showResults, setShowResults] = useState(false);
+  const [results, setResults] = useState<{ patients: any[], plants: any[], treatments: any[] }>({ patients: [], plants: [], treatments: [] });
+
+  // Debounce Logic
+  useEffect(() => {
+    const delayDebounceFn = setTimeout(async () => {
+      if (searchQuery.length >= 2) {
+        setIsSearching(true);
+        try {
+          const res = await fetch(`http://localhost:3001/api/search?q=${searchQuery}`);
+          const data = await res.json();
+          if (data.success) {
+            setResults({
+              patients: data.patients || [],
+              plants: data.plants || [],
+              treatments: data.treatments || []
+            });
+            setShowResults(true);
+          }
+        } catch (error) {
+          console.error('Search error:', error);
+        } finally {
+          setIsSearching(false);
+        }
+      } else {
+        setResults({ patients: [], plants: [], treatments: [] });
+        setShowResults(false);
+      }
+    }, 300);
+
+    return () => clearTimeout(delayDebounceFn);
+  }, [searchQuery]);
+
+  const handleResultClick = (type: 'patient' | 'pharmacy', id: string) => {
+    setShowResults(false);
+    setSearchQuery('');
+    if (type === 'patient') {
+      onNavigate(Screen.PATIENT_RECORD, id);
+    } else {
+      onNavigate(Screen.PHARMACY);
+    }
+  };
+
 
   // SKIP TO FOOTER REPLACEMENT
   // Note: Since I cannot actually skip in replacement, I will target the exact block for the footer.
@@ -97,16 +145,118 @@ const Layout: React.FC<LayoutProps> = ({ children, currentScreen, onNavigate, on
             <button className="md:hidden text-text-main">
               <span className="material-symbols-outlined">menu</span>
             </button>
-            <div className="hidden md:flex flex-col w-full h-10 group">
+            <div className="hidden md:flex flex-col w-full h-10 group relative">
               <div className="flex w-full flex-1 items-stretch rounded-lg h-full bg-background-light focus-within:ring-2 focus-within:ring-primary/50 transition-shadow">
                 <div className="text-text-muted flex items-center justify-center pl-4 rounded-l-lg">
                   <span className="material-symbols-outlined">search</span>
                 </div>
                 <input
                   className="flex w-full min-w-0 flex-1 resize-none overflow-hidden rounded-lg bg-transparent border-none h-full placeholder:text-text-muted px-4 text-sm font-normal focus:ring-0"
-                  placeholder="Buscar pacientes, ervas, prontuários..."
+                  placeholder="Buscar pacientes, ervas, tratamentos..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  onFocus={() => { if (searchQuery.length >= 2) setShowResults(true); }}
                 />
+                {isSearching && (
+                  <div className="pr-4 flex items-center">
+                    <span className="material-symbols-outlined animate-spin text-primary text-sm">progress_activity</span>
+                  </div>
+                )}
               </div>
+
+              {/* Search Dropdown - Only show if we have results or query > 2 */}
+              {showResults && searchQuery.length >= 2 && (
+                <div
+                  className="absolute top-full left-0 right-0 mt-2 bg-white rounded-xl shadow-xl border border-border-light overflow-hidden z-50 max-h-[80vh] overflow-y-auto"
+                >
+                  {/* Patients Section */}
+                  {results.patients.length > 0 && (
+                    <div className="p-2">
+                      <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider px-3 py-2">Pacientes</h4>
+                      {results.patients.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => handleResultClick('patient', p.id)}
+                          className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg text-left transition-colors"
+                        >
+                          {p.image ? (
+                            <div className="size-8 rounded-full bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${p.image})` }} />
+                          ) : (
+                            <div className="size-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center text-xs font-bold shrink-0">
+                              {p.name.substring(0, 2).toUpperCase()}
+                            </div>
+                          )}
+                          <div className="flex flex-col overflow-hidden">
+                            <span className="text-sm font-medium text-text-main truncate text-ellipsis w-full">{p.name}</span>
+                            <span className="text-xs text-text-muted">{p.village}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Plants Section */}
+                  {results.plants.length > 0 && (
+                    <div className="p-2 border-t border-border-light">
+                      <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider px-3 py-2">Plantas Medicinais</h4>
+                      {results.plants.map(p => (
+                        <button
+                          key={p.id}
+                          onClick={() => handleResultClick('pharmacy', p.id)}
+                          className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg text-left transition-colors"
+                        >
+                          {p.image ? (
+                            <div className="size-8 rounded-lg bg-cover bg-center shrink-0" style={{ backgroundImage: `url(${p.image})` }} />
+                          ) : (
+                            <div className="size-8 rounded-lg bg-green-100 text-green-600 flex items-center justify-center shrink-0">
+                              <span className="material-symbols-outlined text-sm">eco</span>
+                            </div>
+                          )}
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-text-main">{p.name}</span>
+                            <span className="text-xs text-text-muted italic">{p.scientificName}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Treatments Section */}
+                  {results.treatments.length > 0 && (
+                    <div className="p-2 border-t border-border-light">
+                      <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider px-3 py-2">Tratamentos</h4>
+                      {results.treatments.map(t => (
+                        <button
+                          key={t.id}
+                          onClick={() => handleResultClick('pharmacy', t.id)}
+                          className="w-full flex items-center gap-3 p-2 hover:bg-gray-50 rounded-lg text-left transition-colors"
+                        >
+                          <div className="size-8 rounded-lg bg-orange-100 text-orange-600 flex items-center justify-center shrink-0">
+                            <span className="material-symbols-outlined text-sm">spa</span>
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-text-main">{t.name}</span>
+                            <span className="text-xs text-text-muted truncate max-w-[200px]">{t.indications}</span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Empty State */}
+                  {results.patients.length === 0 && results.plants.length === 0 && results.treatments.length === 0 && !isSearching && (
+                    <div className="p-6 text-center text-text-muted text-sm">
+                      Nenhum resultado encontrado.
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Backdrop to close dropdown */}
+              {showResults && (
+                <div className="fixed inset-0 z-40 bg-transparent" onClick={() => setShowResults(false)} />
+              )}
+
             </div>
           </div>
           <div className="flex items-center gap-4">

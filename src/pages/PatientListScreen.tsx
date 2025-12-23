@@ -161,7 +161,7 @@ const PatientListScreen: React.FC<PatientListScreenProps> = ({ onNavigate }) => 
                             </div>
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-muted font-mono">{patient.cns || '-'}</td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-muted font-mono">{patient.cns || patient.cpf || '-'}</td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-text-muted">
                           <div className="flex items-center gap-1.5">
                             <span className="material-symbols-outlined text-base text-text-muted">forest</span>

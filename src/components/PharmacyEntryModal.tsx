@@ -6,6 +6,7 @@ interface PharmacyEntryModalProps {
     isOpen: boolean;
     onClose: () => void;
     onSave: () => void;
+    initialData?: any;
 }
 
 interface Ingredient {
@@ -14,7 +15,7 @@ interface Ingredient {
     plantId?: string;
 }
 
-const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, onClose, onSave }) => {
+const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, onClose, onSave, initialData }) => {
     const [formData, setFormData] = useState<any>({});
     const [isLoading, setIsLoading] = useState(false);
 
@@ -22,6 +23,20 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
     const [ingredients, setIngredients] = useState<Ingredient[]>([]);
     const [newIngredient, setNewIngredient] = useState<Ingredient>({ name: '', quantity: '' });
     const [availablePlants, setAvailablePlants] = useState<any[]>([]);
+
+    useEffect(() => {
+        if (isOpen) {
+            if (initialData) {
+                setFormData(initialData);
+                if (type === 'treatment' && initialData.ingredients) {
+                    setIngredients(initialData.ingredients);
+                }
+            } else {
+                setFormData({});
+                setIngredients([]);
+            }
+        }
+    }, [isOpen, initialData, type]);
 
     useEffect(() => {
         if (isOpen && type === 'treatment') {
@@ -53,11 +68,6 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
 
     const handleIngredientPlantChange = (e: React.ChangeEvent<HTMLSelectElement>) => {
         const plantId = e.target.value;
-        const plant = availablePlants.find(p => p.id === parseInt(plantId)); // Assuming ID might be number/string check later
-        // If ID is UUID string, parseInt might fail, but let's check our types. 
-        // Our DB id is UUID? Let's check. Yes, it is UUID usually or SERIAL. 
-        // Wait, in migration it was `id UUID DEFAULT gen_random_uuid()`. 
-        // So checking `p.id === plantId` is better.
         const selected = availablePlants.find(p => p.id === plantId);
 
         if (selected) {
@@ -71,9 +81,14 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
         e.preventDefault();
         setIsLoading(true);
 
-        const endpoint = type === 'plant'
+        const isEdit = !!initialData?.id;
+        let endpoint = type === 'plant'
             ? 'http://localhost:3001/api/pharmacy/plants'
             : 'http://localhost:3001/api/pharmacy/treatments';
+
+        if (isEdit) {
+            endpoint += `/${initialData.id}`;
+        }
 
         const payload = { ...formData };
         if (type === 'treatment') {
@@ -82,7 +97,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
 
         try {
             const response = await fetch(endpoint, {
-                method: 'POST',
+                method: isEdit ? 'PUT' : 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload),
             });
@@ -90,8 +105,6 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
             if (response.ok) {
                 onSave();
                 onClose();
-                setFormData({});
-                setIngredients([]);
             } else {
                 alert('Erro ao salvar.');
             }
@@ -108,7 +121,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
             <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
                 <div className="p-6 border-b border-border-light flex justify-between items-center sticky top-0 bg-white z-10">
                     <h2 className="text-xl font-bold text-slate-900">
-                        {type === 'plant' ? 'Nova Planta' : 'Novo Tratamento'}
+                        {initialData ? (type === 'plant' ? 'Editar Planta' : 'Editar Tratamento') : (type === 'plant' ? 'Nova Planta' : 'Novo Tratamento')}
                     </h2>
                     <button onClick={onClose} className="p-2 hover:bg-slate-100 rounded-full transition-colors">
                         <span className="material-symbols-outlined">close</span>
@@ -122,6 +135,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                             <label className="block text-sm font-medium text-slate-700 mb-1">Nome Principal *</label>
                             <input
                                 required
+                                value={formData.name || ''}
                                 className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                 placeholder={type === 'plant' ? "Ex: Capim-santo" : "Ex: Chá de Casca"}
                                 onChange={e => handleChange('name', e.target.value)}
@@ -135,6 +149,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Nome Científico</label>
                                         <input
+                                            value={formData.scientificName || ''}
                                             className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                             onChange={e => handleChange('scientificName', e.target.value)}
                                         />
@@ -142,6 +157,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Nome Indígena</label>
                                         <input
+                                            value={formData.indigenousName || ''}
                                             className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                             onChange={e => handleChange('indigenousName', e.target.value)}
                                         />
@@ -150,6 +166,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Uso Principal (Categoria)</label>
                                     <select
+                                        value={formData.mainUse || ''}
                                         className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                         onChange={e => handleChange('mainUse', e.target.value)}
                                     >
@@ -165,6 +182,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Descrição Botânica</label>
                                     <textarea
+                                        value={formData.description || ''}
                                         className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all min-h-[80px]"
                                         onChange={e => handleChange('description', e.target.value)}
                                     />
@@ -173,6 +191,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Preparo / Infusão</label>
                                         <textarea
+                                            value={formData.preparation || ''}
                                             className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                             onChange={e => handleChange('preparation', e.target.value)}
                                         />
@@ -180,6 +199,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Posologia</label>
                                         <textarea
+                                            value={formData.dosage || ''}
                                             className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                             onChange={e => handleChange('dosage', e.target.value)}
                                         />
@@ -192,6 +212,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Origem / Etnia</label>
                                     <input
+                                        value={formData.origin || ''}
                                         className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                         placeholder="Ex: Povo Tukano"
                                         onChange={e => handleChange('origin', e.target.value)}
@@ -200,6 +221,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Indicações</label>
                                     <input
+                                        value={formData.indications || ''}
                                         className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                         placeholder="Ex: Febre, Dor de cabeça"
                                         onChange={e => handleChange('indications', e.target.value)}
@@ -267,6 +289,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                 <div>
                                     <label className="block text-sm font-medium text-slate-700 mb-1">Modo de Preparo</label>
                                     <textarea
+                                        value={formData.preparationMethod || ''}
                                         className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all min-h-[100px]"
                                         onChange={e => handleChange('preparationMethod', e.target.value)}
                                     />
@@ -276,6 +299,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Frequência</label>
                                         <input
+                                            value={formData.frequency || ''}
                                             className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                             placeholder="Ex: 3x ao dia"
                                             onChange={e => handleChange('frequency', e.target.value)}
@@ -284,6 +308,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                     <div>
                                         <label className="block text-sm font-medium text-slate-700 mb-1">Duração</label>
                                         <input
+                                            value={formData.duration || ''}
                                             className="w-full rounded-lg border border-border-light px-4 py-2 focus:ring-2 focus:ring-primary/20 focus:border-primary outline-none transition-all"
                                             placeholder="Ex: 7 dias"
                                             onChange={e => handleChange('duration', e.target.value)}
@@ -294,6 +319,7 @@ const PharmacyEntryModal: React.FC<PharmacyEntryModalProps> = ({ type, isOpen, o
                                 <div>
                                     <label className="block text-sm font-medium text-red-600 mb-1">Efeitos Colaterais</label>
                                     <input
+                                        value={formData.sideEffects || ''}
                                         className="w-full rounded-lg border border-red-100 bg-red-50 px-4 py-2 focus:ring-2 focus:ring-red-200 focus:border-red-400 outline-none transition-all"
                                         placeholder="Ex: Sonolência"
                                         onChange={e => handleChange('sideEffects', e.target.value)}

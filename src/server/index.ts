@@ -66,6 +66,8 @@ app.get('/api/patients', async (req, res) => {
                     ) THEN 'Aguardando'
                     ELSE ps.label 
                 END as status, 
+                p.cns,
+                p.cpf,
                 p.image_url as image 
             FROM patients p
             LEFT JOIN patient_statuses ps ON p.status_id = ps.id
@@ -613,6 +615,130 @@ app.post('/api/pharmacy/treatments', async (req, res) => {
         res.json({ success: true, id: result.rows[0].id });
     } catch (error) {
         console.error('Error creating treatment:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+
+
+app.put('/api/pharmacy/plants/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, scientificName, indigenousName, description, mainUse, usageParts, indications, preparation, dosage, contraindications, cultivation, image } = req.body;
+
+    if (!name) {
+        res.status(400).json({ success: false, message: 'Name is required' });
+        return;
+    }
+
+    try {
+        const text = `
+            UPDATE plants 
+            SET name = $1, scientific_name = $2, indigenous_name = $3, description = $4, main_use = $5, usage_parts = $6, indications = $7, preparation = $8, dosage = $9, contraindications = $10, cultivation_info = $11, image_url = $12
+            WHERE id = $13
+        `;
+        const values = [name, scientificName, indigenousName, description, mainUse, JSON.stringify(usageParts || []), indications, preparation, dosage, contraindications, JSON.stringify(cultivation || {}), image, id];
+
+        await query(text, values);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating plant:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+app.put('/api/pharmacy/treatments/:id', async (req, res) => {
+    const { id } = req.params;
+    const { name, origin, indications, ingredients, preparationMethod, duration, frequency, sideEffects, notes } = req.body;
+
+    if (!name) {
+        res.status(400).json({ success: false, message: 'Name is required' });
+        return;
+    }
+
+    try {
+        const text = `
+            UPDATE treatments
+            SET name = $1, origin = $2, indications = $3, ingredients = $4, preparation_method = $5, duration = $6, frequency = $7, side_effects = $8, notes = $9
+            WHERE id = $10
+        `;
+        const values = [name, origin, indications, JSON.stringify(ingredients || []), preparationMethod, duration, frequency, sideEffects, notes, id];
+
+        await query(text, values);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error updating treatment:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+
+app.delete('/api/pharmacy/plants/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await query('DELETE FROM plants WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting plant:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+app.delete('/api/pharmacy/treatments/:id', async (req, res) => {
+    const { id } = req.params;
+    try {
+        await query('DELETE FROM treatments WHERE id = $1', [id]);
+        res.json({ success: true });
+    } catch (error) {
+        console.error('Error deleting treatment:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Global Search Route
+app.get('/api/search', async (req, res) => {
+    const { q } = req.query;
+
+    if (!q || typeof q !== 'string' || q.length < 2) {
+        return res.json({ success: true, patients: [], plants: [], treatments: [] });
+    }
+
+    try {
+        const term = `%${q}%`;
+
+        // Parallel Search
+        const [patientsRes, plantsRes, treatmentsRes] = await Promise.all([
+            query(
+                `SELECT id, name, image_url as image, village, cns 
+                 FROM patients 
+                 WHERE name ILIKE $1 OR cns ILIKE $1 
+                 LIMIT 5`,
+                [term]
+            ),
+            query(
+                `SELECT id, name, scientific_name as "scientificName", image_url as image 
+                 FROM plants 
+                 WHERE name ILIKE $1 OR scientific_name ILIKE $1 OR indigenous_name ILIKE $1 
+                 LIMIT 5`,
+                [term]
+            ),
+            query(
+                `SELECT id, name, indications 
+                 FROM treatments 
+                 WHERE name ILIKE $1 OR indications ILIKE $1 
+                 LIMIT 5`,
+                [term]
+            )
+        ]);
+
+        res.json({
+            success: true,
+            patients: patientsRes.rows,
+            plants: plantsRes.rows,
+            treatments: treatmentsRes.rows
+        });
+
+    } catch (error) {
+        console.error('Global search error:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });

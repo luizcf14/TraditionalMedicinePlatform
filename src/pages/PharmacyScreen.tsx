@@ -18,6 +18,8 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
     const [treatments, setTreatments] = useState<Treatment[]>([]);
     const [isLoading, setIsLoading] = useState(true);
 
+    const [isEditing, setIsEditing] = useState(false);
+
     // Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [modalType, setModalType] = useState<'plant' | 'treatment'>('plant');
@@ -46,6 +48,10 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
 
             if (treatmentsData.success) {
                 setTreatments(treatmentsData.treatments);
+                // Keep selected treatment logic similar if needed, or just let it refresh
+                if (activeTab === 'treatments' && selectedItem && !treatmentsData.treatments.find((t: any) => t.id === selectedItem.id)) {
+                    if (treatmentsData.treatments.length > 0) setSelectedItem(treatmentsData.treatments[0]);
+                }
             }
 
         } catch (error) {
@@ -60,8 +66,46 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
     }, []);
 
     const handleOpenModal = () => {
+        setIsEditing(false);
         setModalType(activeTab === 'plants' ? 'plant' : 'treatment');
         setIsModalOpen(true);
+    };
+
+    const handleEdit = () => {
+        if (!selectedItem) return;
+        setIsEditing(true);
+        setModalType(activeTab === 'plants' ? 'plant' : 'treatment');
+        setIsModalOpen(true);
+    };
+
+    const handleDelete = async () => {
+        if (!selectedItem) return;
+
+        const isPlant = activeTab === 'plants';
+        const typeName = isPlant ? 'esta planta' : 'este tratamento';
+
+        if (!window.confirm(`Tem certeza que deseja excluir ${typeName}?`)) {
+            return;
+        }
+
+        try {
+            const endpoint = isPlant
+                ? `http://localhost:3001/api/pharmacy/plants/${selectedItem.id}`
+                : `http://localhost:3001/api/pharmacy/treatments/${selectedItem.id}`;
+
+            const res = await fetch(endpoint, { method: 'DELETE' });
+            const data = await res.json();
+
+            if (data.success) {
+                setSelectedItem(null); // Clear selection
+                fetchData(); // Refresh list
+            } else {
+                alert('Erro ao excluir.');
+            }
+        } catch (error) {
+            console.error("Error deleting item:", error);
+            alert('Erro de conexão.');
+        }
     };
 
     const handleSave = () => {
@@ -102,6 +146,7 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
                 type={modalType}
                 onClose={() => setIsModalOpen(false)}
                 onSave={handleSave}
+                initialData={isEditing ? selectedItem : undefined}
             />
 
             {/* Left List Section */}
@@ -237,9 +282,9 @@ const PharmacyScreen: React.FC<PharmacyScreenProps> = ({ onNavigate }) => {
             <section className="hidden lg:flex flex-col w-7/12 bg-background-light overflow-y-auto">
                 <div className="sticky top-0 z-20 bg-background-light/95 backdrop-blur px-8 py-4 border-b border-border-light flex items-center justify-between">
                     <div className="flex items-center gap-2 text-slate-500">
-                        <button className="p-2 hover:bg-slate-200 rounded-full transition-colors"><span className="material-symbols-outlined">edit</span></button>
+                        <button onClick={handleEdit} className="p-2 hover:bg-slate-200 rounded-full transition-colors"><span className="material-symbols-outlined">edit</span></button>
                         <button className="p-2 hover:bg-slate-200 rounded-full transition-colors"><span className="material-symbols-outlined">share</span></button>
-                        <button className="p-2 hover:bg-red-100 hover:text-red-600 rounded-full transition-colors"><span className="material-symbols-outlined">delete</span></button>
+                        <button onClick={handleDelete} className="p-2 hover:bg-red-100 hover:text-red-600 rounded-full transition-colors"><span className="material-symbols-outlined">delete</span></button>
                     </div>
                     <div className="text-xs font-medium text-slate-400">Atualizado recentemente</div>
                 </div>
