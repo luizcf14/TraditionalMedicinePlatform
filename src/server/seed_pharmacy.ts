@@ -1,5 +1,5 @@
 
-import { query, pool } from './db';
+import { query, pool } from './db.js';
 
 const plants = [
     {

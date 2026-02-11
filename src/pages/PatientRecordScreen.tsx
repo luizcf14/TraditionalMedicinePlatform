@@ -2,7 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { Screen, Patient, Appointment } from '../types';
 import PrescriptionDocument from '../components/PrescriptionDocument';
 import PatientSummaryDocument from '../components/PatientSummaryDocument';
+import GrowthCharts from '../components/GrowthCharts';
+import GrowthMeasurementModal from '../components/GrowthMeasurementModal';
 import { apiFetch } from '../services/api';
+import { GrowthRecord } from '../types';
 
 interface PatientRecordScreenProps {
   onNavigate: (screen: Screen, patientId?: string, appointmentId?: string) => void;
@@ -55,6 +58,23 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
   const [isLoading, setIsLoading] = useState(true);
   const [activeTreatments, setActiveTreatments] = useState<ActiveTreatment[]>([]);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
+
+  // Growth State
+  const [growthRecords, setGrowthRecords] = useState<GrowthRecord[]>([]);
+  const [showGrowthModal, setShowGrowthModal] = useState(false);
+  const [isChild, setIsChild] = useState(false);
+  const childAgeLimit = Number(import.meta.env.VITE_CHILD_AGE_LIMIT) || 18;
+
+  const fetchGrowthRecords = () => {
+    if (patientId) {
+      apiFetch(`/api/patients/${patientId}/growth`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) setGrowthRecords(data.records);
+        })
+        .catch(err => console.error(err));
+    }
+  };
 
   // Quick Print State
   const [printingPrescription, setPrintingPrescription] = useState<any | null>(null);
@@ -114,11 +134,26 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
         apiFetch(`/api/patients/${patientId}/appointments`).then(res => res.json()),
         apiFetch(`/api/patients/${patientId}/active-treatments`).then(res => res.json())
       ]).then(([patientData, historyData, treatmentsData]) => {
-        if (patientData.success) setPatient(patientData.patient);
+        if (patientData.success) {
+          setPatient(patientData.patient);
+          // Check Age
+          if (patientData.patient.dob) {
+            const dobDate = new Date(patientData.patient.dob);
+            const today = new Date();
+            let age = today.getFullYear() - dobDate.getFullYear();
+            const m = today.getMonth() - dobDate.getMonth();
+            if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+              age--;
+            }
+            setIsChild(age < childAgeLimit);
+          }
+        }
         if (historyData.success) setAppointments(historyData.appointments);
         if (treatmentsData.success) setActiveTreatments(treatmentsData.treatments);
       }).catch(err => console.error(err))
         .finally(() => setIsLoading(false));
+
+      fetchGrowthRecords();
     }
   }, [patientId]);
 
@@ -269,6 +304,15 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
             <button className="px-6 py-3 text-sm font-medium text-text-muted hover:text-text-main transition-colors whitespace-nowrap bg-transparent">
               Evolução Espiritual
             </button> */}
+            {isChild && (
+              <button
+                onClick={() => document.getElementById('growth-section')?.scrollIntoView({ behavior: 'smooth' })}
+                className="px-6 py-3 text-sm font-medium text-primary hover:text-primary-dark transition-colors whitespace-nowrap bg-transparent flex items-center gap-2"
+              >
+                <span className="material-symbols-outlined text-lg">show_chart</span>
+                Curvas de Crescimento
+              </button>
+            )}
           </div>
 
           {/* Filter */}
@@ -357,6 +401,30 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
             <span className="material-symbols-outlined">history</span>
             Carregar histórico anterior
           </button>
+          <button className="w-full py-3 text-sm font-medium text-text-muted hover:text-primary border border-dashed border-border-light rounded-xl hover:bg-surface-light transition-all flex items-center justify-center gap-2">
+            <span className="material-symbols-outlined">history</span>
+            Carregar histórico anterior
+          </button>
+
+          {/* Growth Charts Section */}
+          {isChild && (
+            <div id="growth-section" className="scroll-mt-6">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-text-main flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">show_chart</span>
+                  Acompanhamento de Crescimento
+                </h3>
+                <button
+                  onClick={() => setShowGrowthModal(true)}
+                  className="px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark transition-colors flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                  Nova Medição
+                </button>
+              </div>
+              <GrowthCharts records={growthRecords} />
+            </div>
+          )}
         </div>
 
         {/* Right Sidebar */}
@@ -502,6 +570,14 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
           />
         )
       }
+
+      {showGrowthModal && patient && (
+        <GrowthMeasurementModal
+          patientId={patient.id}
+          onClose={() => setShowGrowthModal(false)}
+          onSuccess={fetchGrowthRecords}
+        />
+      )}
     </div >
   );
 };

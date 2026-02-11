@@ -1,0 +1,29 @@
+{
+    "extends": "./tsconfig.json",
+    "compilerOptions": {
+        "module": "NodeNext",
+        "moduleResolution": "NodeNext",
+        "noEmit": false,
+        "outDir": "dist/server",
+        "types": [
+            "node",
+            "express",
+            "pg",
+            "cors",
+            "dotenv"
+        ],
+        "skipLibCheck": true,
+        "esModuleInterop": true,
+        "allowImportingTsExtensions": false
+    },
+    "include": [
+        "src/server/**/*"
+    ],
+    "exclude": [
+        "src/client/**/*",
+        "src/pages/**/*",
+        "src/components/**/*",
+        "src/App.tsx",
+        "src/index.tsx"
+    ]
+}

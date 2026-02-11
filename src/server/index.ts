@@ -1,7 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import { query, pool } from './db';
+import { query, pool } from './db.js';
 
 dotenv.config();
 
@@ -10,6 +10,16 @@ const PORT = process.env.PORT || 3001;
 
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
+
+// Serve static files from the React app
+import path from 'path';
+import { fileURLToPath } from 'url';
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const clientBuildPath = path.join(__dirname, '../');
+app.use(express.static(clientBuildPath));
+
 
 // Login Route
 app.post('/api/login', async (req, res) => {
@@ -69,7 +79,13 @@ app.get('/api/patients', async (req, res) => {
                 END as status, 
                 p.cns,
                 p.cpf,
-                p.image_url as image 
+                p.cns,
+                p.cpf,
+                p.image_url as image,
+                p.email,
+                p.uf,
+                p.city,
+                p.address
             FROM patients p
             LEFT JOIN patient_statuses ps ON p.status_id = ps.id
         `;
@@ -117,6 +133,12 @@ app.get('/api/patients/:id', async (req, res) => {
                 p.image_url as image,
                 p.cns,
                 p.cpf,
+                p.cns,
+                p.cpf,
+                p.email,
+                p.uf,
+                p.city,
+                p.address,
                 p.allergies,
                 p.conditions,
                 p.blood_type as "bloodType",
@@ -463,7 +485,7 @@ app.get('/api/appointments/:id/details', async (req, res) => {
 
 
 app.post('/api/patients', async (req, res) => {
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, email, uf, city, address } = req.body;
 
     // Basic validation
     if (!name || !village) {
@@ -489,11 +511,11 @@ app.post('/api/patients', async (req, res) => {
         const imageUrl = image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
 
         const text = `
-            INSERT INTO patients (name, dob, village, ethnicity, cns, mother_name, status_id, image_url, indigenous_name, cpf, blood_type, allergies, conditions)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+            INSERT INTO patients (name, dob, village, ethnicity, cns, mother_name, status_id, image_url, indigenous_name, cpf, blood_type, allergies, conditions, email, uf, city, address)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
             RETURNING id
         `;
-        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, statusId, imageUrl, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null];
+        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, statusId, imageUrl, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, email || null, uf || null, city || null, address || null];
 
         const result = await query(text, values);
         res.json({ success: true, patientId: result.rows[0].id });
@@ -506,15 +528,15 @@ app.post('/api/patients', async (req, res) => {
 
 app.put('/api/patients/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, statusOverride } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, statusOverride, email, uf, city, address } = req.body;
 
     try {
         let text = `
             UPDATE patients 
-            SET name = $1, dob = $2, village = $3, ethnicity = $4, cns = $5, mother_name = $6, indigenous_name = $7, cpf = $8, blood_type = $9, allergies = $10, conditions = $11, updated_at = NOW()
+            SET name = $1, dob = $2, village = $3, ethnicity = $4, cns = $5, mother_name = $6, indigenous_name = $7, cpf = $8, blood_type = $9, allergies = $10, conditions = $11, email = $12, uf = $13, city = $14, address = $15, updated_at = NOW()
         `;
-        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null];
-        let paramIndex = 12;
+        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, email || null, uf || null, city || null, address || null];
+        let paramIndex = 16;
 
         if (image) {
             text += `, image_url = $${paramIndex}`;
@@ -600,6 +622,40 @@ const ensureObitoStatus = async () => {
     }
 };
 ensureObitoStatus();
+
+// Growth Records Routes
+app.get('/api/patients/:id/growth', async (req, res) => {
+    const { id } = req.params;
+    try {
+        const result = await query(
+            'SELECT * FROM growth_records WHERE patient_id = $1 ORDER BY date ASC',
+            [id]
+        );
+        res.json({ success: true, records: result.rows });
+    } catch (error) {
+        console.error('Get growth records error:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+app.post('/api/patients/:id/growth', async (req, res) => {
+    const { id } = req.params;
+    const { date, weight, height, headCircumference } = req.body;
+
+    try {
+        const text = `
+            INSERT INTO growth_records (patient_id, date, weight, height, head_circumference)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id
+        `;
+        const values = [id, date || new Date(), weight || null, height || null, headCircumference || null];
+        const result = await query(text, values);
+        res.json({ success: true, id: result.rows[0].id });
+    } catch (error) {
+        console.error('Create growth record error:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
 
 // Pharmacy Routes
 app.get('/api/pharmacy/plants', async (req, res) => {
@@ -865,6 +921,12 @@ app.get('/api/icd', async (req, res) => {
         console.error('Search ICD error:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
+});
+
+// The "catchall" handler: for any request that doesn't
+// match one above, send back React's index.html file.
+app.get(/.*/, (req, res) => {
+    res.sendFile(path.join(clientBuildPath, 'index.html'));
 });
 
 app.listen(PORT, () => {

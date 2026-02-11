@@ -27,10 +27,33 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
     conditions: '',
     image: '',
     status: '',
-    statusOverride: ''
+    statusOverride: '',
+    email: '',
+    uf: '',
+    city: '',
+    address: '',
+    weight: '',
+    height: '',
+    headCircumference: ''
   });
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [isChild, setIsChild] = useState(false);
+
+  const childAgeLimit = Number(import.meta.env.VITE_CHILD_AGE_LIMIT) || 18;
+
+  useEffect(() => {
+    if (formData.dob) {
+      const dobDate = new Date(formData.dob);
+      const today = new Date();
+      let age = today.getFullYear() - dobDate.getFullYear();
+      const m = today.getMonth() - dobDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+        age--;
+      }
+      setIsChild(age < childAgeLimit);
+    }
+  }, [formData.dob]);
 
   // Webcam State
   const [isCameraOpen, setIsCameraOpen] = useState(false);
@@ -60,7 +83,11 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
               allergies: p.allergies || '',
               conditions: p.conditions || '',
               image: p.image || '',
-              status: p.status || ''
+              status: p.status || '',
+              email: p.email || '',
+              uf: p.uf || '',
+              city: p.city || '',
+              address: p.address || ''
             }));
           }
         })
@@ -140,10 +167,19 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
   }, [stream]);
 
   const handleSave = async () => {
+    if (!formData.name || !formData.village || !formData.email || !formData.uf || !formData.city || !formData.address) {
+      alert('Por favor, preencha todos os campos obrigatórios (Nome, Aldeia, Email, UF, Cidade, Endereço).');
+      return;
+    }
+
     setLoading(true);
     try {
       const body = {
         name: formData.name,
+        email: formData.email,
+        uf: formData.uf,
+        city: formData.city,
+        address: formData.address,
         dob: formData.dob || null,
         village: formData.village,
         ethnicity: formData.ethnicity,
@@ -172,6 +208,25 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
       const data = await res.json();
 
       if (data.success) {
+
+        // Save initial growth record if applicable
+        if (isChild && (formData.weight || formData.height || formData.headCircumference)) {
+          try {
+            await apiFetch(`/api/patients/${patientId || data.patientId}/growth`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                date: new Date().toISOString().split('T')[0],
+                weight: formData.weight,
+                height: formData.height,
+                headCircumference: formData.headCircumference
+              })
+            });
+          } catch (gErr) {
+            console.error("Failed to save initial growth record", gErr);
+          }
+        }
+
         alert(patientId ? 'Paciente atualizado com sucesso!' : 'Paciente cadastrado com sucesso!');
         onNavigate(Screen.PATIENT_RECORD, patientId || data.patientId);
       } else {
@@ -410,6 +465,109 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
               </div>
             </div>
           </section>
+
+          {/* Section: Contact Info (Mandatory) */}
+          <section className="bg-white rounded-xl border border-border-light p-6 shadow-sm relative overflow-hidden">
+            <div className="flex items-center gap-2 mb-6 border-b border-border-light pb-4 relative z-10">
+              <span className="material-symbols-outlined text-primary">contact_mail</span>
+              <h3 className="text-lg font-bold text-text-main">Informações de Contato</h3>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-main mb-2">Email *</label>
+                <input
+                  name="email" value={formData.email} onChange={handleChange}
+                  className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                  placeholder="email@exemplo.com" type="email" required
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-2">Estado (UF) *</label>
+                <select name="uf" value={formData.uf} onChange={handleChange} required className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3">
+                  <option value="">Selecione</option>
+                  <option value="AC">Acre</option>
+                  <option value="AL">Alagoas</option>
+                  <option value="AP">Amapá</option>
+                  <option value="AM">Amazonas</option>
+                  <option value="BA">Bahia</option>
+                  <option value="CE">Ceará</option>
+                  <option value="DF">Distrito Federal</option>
+                  <option value="ES">Espírito Santo</option>
+                  <option value="GO">Goiás</option>
+                  <option value="MA">Maranhão</option>
+                  <option value="MT">Mato Grosso</option>
+                  <option value="MS">Mato Grosso do Sul</option>
+                  <option value="MG">Minas Gerais</option>
+                  <option value="PA">Pará</option>
+                  <option value="PB">Paraíba</option>
+                  <option value="PR">Paraná</option>
+                  <option value="PE">Pernambuco</option>
+                  <option value="PI">Piauí</option>
+                  <option value="RJ">Rio de Janeiro</option>
+                  <option value="RN">Rio Grande do Norte</option>
+                  <option value="RS">Rio Grande do Sul</option>
+                  <option value="RO">Rondônia</option>
+                  <option value="RR">Roraima</option>
+                  <option value="SC">Santa Catarina</option>
+                  <option value="SP">São Paulo</option>
+                  <option value="SE">Sergipe</option>
+                  <option value="TO">Tocantins</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-main mb-2">Cidade *</label>
+                <input
+                  name="city" value={formData.city} onChange={handleChange}
+                  className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                  placeholder="Nome da Cidade" type="text" required
+                />
+              </div>
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-text-main mb-2">Endereço Completo *</label>
+                <input
+                  name="address" value={formData.address} onChange={handleChange}
+                  className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                  placeholder="Rua, Número, Bairro, CEP" type="text" required
+                />
+              </div>
+            </div>
+          </section>
+
+          {/* Section: Growth Metrics (Children/Adolescents) */}
+          {isChild && (
+            <section className="bg-white rounded-xl border border-border-light p-6 shadow-sm relative overflow-hidden">
+              <div className="flex items-center gap-2 mb-6 border-b border-border-light pb-4 relative z-10">
+                <span className="material-symbols-outlined text-primary">child_care</span>
+                <h3 className="text-lg font-bold text-text-main">Dados de Crescimento (Opcional)</h3>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6 relative z-10">
+                <div>
+                  <label className="block text-sm font-medium text-text-main mb-2">Peso (kg)</label>
+                  <input
+                    name="weight" value={(formData as any).weight} onChange={handleChange}
+                    className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                    placeholder="Ex: 30.5" type="number" step="0.01"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-main mb-2">Altura (cm)</label>
+                  <input
+                    name="height" value={(formData as any).height} onChange={handleChange}
+                    className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                    placeholder="Ex: 120" type="number" step="0.1"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-text-main mb-2">Perímetro Craniano (cm)</label>
+                  <input
+                    name="headCircumference" value={(formData as any).headCircumference} onChange={handleChange}
+                    className="w-full rounded-lg border-border-light bg-background-light text-text-main focus:ring-primary focus:border-primary p-3"
+                    placeholder="Ex: 50" type="number" step="0.1"
+                  />
+                </div>
+              </div>
+            </section>
+          )}
         </div>
 
         {/* Right Column: Sidebar */}

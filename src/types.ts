@@ -37,6 +37,10 @@ export interface Patient {
   allergies?: string;
   conditions?: string;
   bloodType?: string;
+  email?: string;
+  uf?: string;
+  city?: string;
+  address?: string;
 }
 
 export interface Appointment {
@@ -102,4 +106,13 @@ export interface Treatment {
 export interface ICDCode {
   code: string;
   description: string;
+}
+
+export interface GrowthRecord {
+  id: string;
+  patient_id: string;
+  date: string;
+  weight: number;
+  height: number;
+  head_circumference?: number;
 }

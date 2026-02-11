@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
-import { Screen, Patient, Plant, Treatment, ICDCode } from '../types';
+import { Screen, Patient, Plant, Treatment, ICDCode, GrowthRecord } from '../types';
 import PrescriptionDocument from '../components/PrescriptionDocument';
+import GrowthCharts from '../components/GrowthCharts';
+import GrowthMeasurementModal from '../components/GrowthMeasurementModal';
 import { apiFetch } from '../services/api';
 
 interface PrescriptionScreenProps {
@@ -51,6 +53,42 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
 
   // History State
   const [history, setHistory] = useState<any[]>([]);
+
+  // Growth Logic
+  const [growthRecords, setGrowthRecords] = useState<GrowthRecord[]>([]);
+  const [showGrowthModal, setShowGrowthModal] = useState(false);
+  const [isChild, setIsChild] = useState(false);
+  const childAgeLimit = Number(import.meta.env.VITE_CHILD_AGE_LIMIT) || 18;
+
+  useEffect(() => {
+    if (patient?.dob) {
+      const dobDate = new Date(patient.dob);
+      const today = new Date();
+      let age = today.getFullYear() - dobDate.getFullYear();
+      const m = today.getMonth() - dobDate.getMonth();
+      if (m < 0 || (m === 0 && today.getDate() < dobDate.getDate())) {
+        age--;
+      }
+      setIsChild(age < childAgeLimit);
+    }
+  }, [patient?.dob]);
+
+  const fetchGrowthRecords = () => {
+    if (patientId) {
+      apiFetch(`/api/patients/${patientId}/growth`)
+        .then(res => res.json())
+        .then(data => {
+          if (data.success) setGrowthRecords(data.records);
+        })
+        .catch(err => console.error(err));
+    }
+  };
+
+  useEffect(() => {
+    if (isChild) {
+      fetchGrowthRecords();
+    }
+  }, [isChild, patientId]);
 
   // Pharmacy Integration State
   const [pharmacyItems, setPharmacyItems] = useState<(Plant | Treatment)[]>([]);
@@ -749,11 +787,32 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
 
 
 
+          {/* 1.5 Growth Charts for Children */}
+          {isChild && (
+            <section className="bg-surface-light rounded-xl shadow-sm border border-border-light p-6 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-primary">child_care</span>
+                  <h3 className="text-lg font-bold text-text-main">Acompanhamento de Crescimento</h3>
+                </div>
+                <button
+                  onClick={() => setShowGrowthModal(true)}
+                  type="button"
+                  className="text-primary hover:bg-primary/5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors flex items-center gap-2"
+                >
+                  <span className="material-symbols-outlined text-[18px]">add</span>
+                  Nova Medição
+                </button>
+              </div>
+              <GrowthCharts records={growthRecords} />
+            </section>
+          )}
+
           {/* 1.5 Diagnosis & Complaint */}
           <section className="bg-surface-light rounded-xl shadow-sm border border-border-light p-6">
             <div className="flex items-center gap-2 mb-3">
               <span className="material-symbols-outlined text-primary">person_alert</span>
-              <h3 className="text-lg font-bold text-text-main">Queixa Principal / Diagnóstico</h3>
+              <h3 className="text-lg font-bold text-text-main">Queixa Principal </h3>
             </div>
             <textarea
               value={diagnosis}
@@ -1095,8 +1154,14 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
           </div>
         </div>
       </div>
+      {showGrowthModal && patient && (
+        <GrowthMeasurementModal
+          patientId={patient.id}
+          onClose={() => setShowGrowthModal(false)}
+          onSuccess={fetchGrowthRecords}
+        />
+      )}
     </>
   );
 };
-
 export default PrescriptionScreen;
