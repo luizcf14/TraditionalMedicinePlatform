@@ -177,6 +177,7 @@ app.get('/api/patients/:id/appointments', async (req, res) => {
                 a.notes, 
                 a.status,
                 pr.diagnosis,
+                pr.ai_summary as "aiSummary",
                 pr.id as "prescriptionId",
                 (
                     SELECT json_agg(json_build_object('name', pi.name, 'dosage', pi.dosage, 'frequency', pi.frequency, 'type', pi.type))
@@ -272,6 +273,71 @@ app.put('/api/appointments/:id', async (req, res) => {
         res.json({ success: true });
     } catch (error) {
         console.error('Update appointment error:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Generate AI Summary for an Appointment
+app.post('/api/appointments/:id/summary', async (req, res) => {
+    const { id } = req.params;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+        return res.status(400).json({ success: false, message: 'GEMINI_API_KEY não configurada no servidor.' });
+    }
+
+    try {
+        // Fetch appointment details
+        const aptRes = await query(
+            `SELECT a.reason, pr.diagnosis 
+             FROM appointments a 
+             LEFT JOIN prescriptions pr ON a.id = pr.appointment_id 
+             WHERE a.id = $1`,
+            [id]
+        );
+
+        if (aptRes.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Atendimento não encontrado' });
+        }
+
+        const diagnosis = aptRes.rows[0].diagnosis;
+        if (!diagnosis || diagnosis.length < 10) {
+            return res.json({ success: false, message: 'Anotações insuficientes para gerar resumo.' });
+        }
+
+        const prompt = `Gere um resumo médico muito conciso (1 ou 2 frases curtas) focando no diagnóstico principal e tratamento, baseado nas seguintes anotações da consulta:\n\n${diagnosis}\n\nRetorne APENAS o texto do resumo, sem formatação markdown ou JSON.`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: "Você é um assistente médico." }] }
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Gemini API Error:', data.error);
+            return res.status(500).json({ success: false, message: 'Erro na API do Gemini' });
+        }
+
+        const summaryText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        
+        if (!summaryText) {
+             return res.status(500).json({ success: false, message: 'A IA não retornou um resumo válido.' });
+        }
+
+        // Save to prescriptions table
+        await query(
+            'UPDATE prescriptions SET ai_summary = $1 WHERE appointment_id = $2',
+            [summaryText, id]
+        );
+
+        res.json({ success: true, summary: summaryText });
+    } catch (error) {
+        console.error('Gemini Summary Error:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
@@ -617,8 +683,10 @@ const ensureObitoStatus = async () => {
         if (res.rows.length === 0) {
             await pool.query("INSERT INTO patient_statuses (label) VALUES ('Óbito')");
         }
+        // Auto-add ai_summary if missing
+        await pool.query("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS ai_summary TEXT");
     } catch (err) {
-        console.error("Failed to ensure Óbito status", err);
+        console.error("Failed to ensure DB state", err);
     }
 };
 ensureObitoStatus();
@@ -919,6 +987,79 @@ app.get('/api/icd', async (req, res) => {
         res.json({ success: true, codes: result.rows });
     } catch (error) {
         console.error('Search ICD error:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Suggest ICD Route via Gemini
+app.post('/api/icd/suggest', async (req, res) => {
+    const { text } = req.body;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+        return res.status(400).json({ success: false, message: 'GEMINI_API_KEY não configurada no servidor.' });
+    }
+
+    if (!text || typeof text !== 'string' || text.length < 5) {
+        return res.json({ success: true, code: null });
+    }
+
+    try {
+        const prompt = `Analise as seguintes anotações de uma consulta médica e extraia TODOS os códigos CID-10 relevantes (doença principal e sintomas relatados). 
+Retorne APENAS um array JSON válido no formato: [{"code": "X00", "description": "Descrição da doença ou sintoma"}]. 
+Se não identificar nenhum, retorne [].
+Anotações: ${text}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: { responseMimeType: "application/json" }
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Gemini API Error:', data.error);
+            return res.status(500).json({ success: false, message: 'Erro na API do Gemini' });
+        }
+
+        const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
+        
+        if (!responseText) {
+             return res.json({ success: true, codes: [] });
+        }
+
+        const cleanedText = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
+        let result = JSON.parse(cleanedText);
+        
+        if (!Array.isArray(result)) {
+            if (result && result.code) {
+                result = [result];
+            } else {
+                result = [];
+            }
+        }
+        
+        const validCodes = [];
+        for (const item of result) {
+            if (item && item.code) {
+                const dbCheck = await query(
+                    'SELECT code, description FROM icd_10 WHERE code ILIKE $1 OR code ILIKE $2 LIMIT 1',
+                    [item.code, `${item.code}%`]
+                );
+                
+                if (dbCheck.rows.length > 0) {
+                    validCodes.push(dbCheck.rows[0]);
+                }
+            }
+        }
+
+        res.json({ success: true, codes: validCodes });
+    } catch (error) {
+        console.error('Gemini Suggest Error:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });

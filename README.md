@@ -1,11 +1,15 @@
 <div align="center">
 
-**Prerequisites:**  Node.js
+**Prerequisites:**  Node.js & Docker
  `npm install`
+
+**Docker (PostgreSQL):**
+- Build/Run: `docker compose up -d` (or use `npm run dev` which does this automatically)
+- Stop: `docker compose down`
 
 **Run:**
  (migrations) -> `npm run migrate`
- (front) -> `npm run dev`
+ (front + db) -> `npm run dev` (starts both the vite frontend and postgres container, and stops postgres when exited)
  (back) -> `npm run server`
 
 **Build:**

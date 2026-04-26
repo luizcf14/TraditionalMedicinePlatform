@@ -11,6 +11,7 @@ import AgendaScreen from './pages/AgendaScreen';
 
 import NewAppointmentScreen from './pages/NewAppointmentScreen';
 import PharmacyScreen from './pages/PharmacyScreen';
+import SettingsScreen from './pages/SettingsScreen';
 
 const App: React.FC = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>(() => {
@@ -86,6 +87,8 @@ const App: React.FC = () => {
         return <AgendaScreen onNavigate={navigate} />;
       case Screen.PHARMACY:
         return <PharmacyScreen onNavigate={navigate} patientId={selectedPatientId} appointmentId={selectedAppointmentId} />;
+      case Screen.SETTINGS:
+        return <SettingsScreen onNavigate={navigate} />;
       default:
         return <DashboardScreen onNavigate={navigate} />;
     }

@@ -53,9 +53,45 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
 
   // History State
   const [history, setHistory] = useState<any[]>([]);
+  const [expandedApts, setExpandedApts] = useState<Record<number, boolean>>({});
+  const [generatingSummaryId, setGeneratingSummaryId] = useState<number | null>(null);
+
+  const handleGenerateSummary = async (aptId: number) => {
+    setGeneratingSummaryId(aptId);
+    try {
+      const res = await apiFetch(`/api/appointments/${aptId}/summary`, {
+        method: 'POST',
+      });
+      const data = await res.json();
+      if (data.success && data.summary) {
+        setHistory(prev => prev.map(a => a.id === aptId ? { ...a, aiSummary: data.summary } : a));
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setGeneratingSummaryId(null);
+    }
+  };
+
+  const toggleExpand = (aptId: number) => {
+    setExpandedApts(prev => ({ ...prev, [aptId]: !prev[aptId] }));
+  };
+
+  // Minimalist Mode
+  const [isMinimalist, setIsMinimalist] = useState(false);
+  const [suggestedCids, setSuggestedCids] = useState<any[]>([]);
+  const [isSuggestingCid, setIsSuggestingCid] = useState(false);
 
   // Growth Logic
   const [growthRecords, setGrowthRecords] = useState<GrowthRecord[]>([]);
+
+  useEffect(() => {
+    const minSetting = localStorage.getItem('minimalistConsultation');
+    if (minSetting === 'true') {
+      setIsMinimalist(true);
+    }
+  }, []);
+
   const [showGrowthModal, setShowGrowthModal] = useState(false);
   const [isChild, setIsChild] = useState(false);
   const childAgeLimit = Number(import.meta.env.VITE_CHILD_AGE_LIMIT) || 18;
@@ -89,6 +125,20 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       fetchGrowthRecords();
     }
   }, [isChild, patientId]);
+
+  useEffect(() => {
+    if (appointmentId && patient) {
+      fetchHistory();
+    }
+  }, [appointmentId, patient]);
+
+  // Load template when minimalist mode is active and diagnosis is empty
+  useEffect(() => {
+    if (isMinimalist && !diagnosis) {
+      const template = localStorage.getItem('minimalistTemplate') || "Sintomas:\n\nPrescrição:\n\nObservações:";
+      setDiagnosis(template);
+    }
+  }, [isMinimalist]);
 
   // Pharmacy Integration State
   const [pharmacyItems, setPharmacyItems] = useState<(Plant | Treatment)[]>([]);
@@ -136,7 +186,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       .then(data => {
         console.log('History data:', data);
         if (data.success && Array.isArray(data.appointments)) {
-          setHistory(data.appointments.slice(0, 3));
+          setHistory(data.appointments);
         } else {
           setHistory([]);
         }
@@ -273,8 +323,8 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
       return;
     }
 
-    if (items.length === 0 && !notes) {
-      alert('Adicione itens ou orientações para salvar.');
+    if (items.length === 0 && !notes && !diagnosis) {
+      alert('Adicione as Anotações, itens ou orientações para salvar.');
       return;
     }
 
@@ -284,6 +334,14 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     }
 
     setIsSaving(true);
+    const finalCids = [...selectedCids];
+    if (isMinimalist && suggestedCids.length > 0) {
+        for (const suggestedCid of suggestedCids) {
+            if (!finalCids.some(c => c.code === suggestedCid.code)) {
+                finalCids.push(suggestedCid);
+            }
+        }
+    }
     try {
       // 1. Save Prescription
       const response = await apiFetch('/api/prescriptions', {
@@ -295,7 +353,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
           items,
           notes,
           diagnosis,
-          cidCodes: selectedCids
+          cidCodes: finalCids
         })
       });
       const data = await response.json();
@@ -384,6 +442,46 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
     }
   };
 
+  // Auto-Suggest CID Effect
+  useEffect(() => {
+    if (!isMinimalist) return;
+    
+    setSuggestedCids([]);
+    
+    const template = localStorage.getItem('minimalistTemplate') || "Sintomas:\n\nPrescrição:\n\nObservações:";
+    
+    // Ignore if empty, too short, or just the template itself (or template with extra newlines)
+    if (!diagnosis || diagnosis.length < 15 || diagnosis.trim() === template.trim()) {
+      setIsSuggestingCid(false);
+      return;
+    }
+
+    setIsSuggestingCid(true);
+    const timeoutId = setTimeout(() => {
+      apiFetch('/api/icd/suggest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: diagnosis })
+      })
+      .then(r => r.json())
+      .then(d => {
+        if (d.success && d.codes && d.codes.length > 0) {
+          // Filter out those already manually selected
+          const newSuggestions = d.codes.filter((newCode: any) => 
+            !selectedCids.some((c: any) => c.code === newCode.code)
+          );
+          if (newSuggestions.length > 0) {
+            setSuggestedCids(newSuggestions);
+          }
+        }
+      })
+      .catch(e => console.error("Error suggesting CIDs:", e))
+      .finally(() => setIsSuggestingCid(false));
+    }, 1500);
+
+    return () => clearTimeout(timeoutId);
+  }, [diagnosis, isMinimalist, selectedCids]);
+
   const handlePrint = () => {
     window.print();
   };
@@ -462,7 +560,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
               {/* Diagnosis (Printable) */}
               {(diagnosis || selectedCids.length > 0) && (
                 <div className="mb-4">
-                  <h2 className="text-lg font-bold mb-2 uppercase tracking-wide border-l-4 border-red-500 pl-2">Queixa / Diagnóstico</h2>
+                  <h2 className="text-lg font-bold mb-2 uppercase tracking-wide border-l-4 border-red-500 pl-2">Anotações / Diagnóstico</h2>
                   {diagnosis && (
                     <div className="bg-red-50 p-3 rounded text-sm text-gray-800 border border-red-100 italic mb-2">
                       {diagnosis}
@@ -481,38 +579,40 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
               )}
 
               {/* Current Prescription */}
-              <div>
-                <h2 className="text-lg font-bold mb-3 uppercase tracking-wide border-l-4 border-primary pl-2">Medicamentos & Tratamentos</h2>
-                {items.length > 0 ? (
-                  <table className="w-full text-left text-sm border-collapse">
-                    <thead>
-                      <tr className="border-b border-gray-300">
-                        <th className="py-2 font-semibold">Tipo</th>
-                        <th className="py-2 font-semibold">Nome</th>
-                        <th className="py-2 font-semibold">Dosagem</th>
-                        <th className="py-2 font-semibold">Frequência</th>
-                        <th className="py-2 font-semibold">Duração</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {items.map((item, idx) => (
-                        <tr key={idx}>
-                          <td className="py-3">{item.type}</td>
-                          <td className="py-3 font-medium">{item.name}</td>
-                          <td className="py-3">{item.dosage}</td>
-                          <td className="py-3">{item.frequency}</td>
-                          <td className="py-3">{item.duration}</td>
+              {!isMinimalist && (
+                <div>
+                  <h2 className="text-lg font-bold mb-3 uppercase tracking-wide border-l-4 border-primary pl-2">Medicamentos & Tratamentos</h2>
+                  {items.length > 0 ? (
+                    <table className="w-full text-left text-sm border-collapse">
+                      <thead>
+                        <tr className="border-b border-gray-300">
+                          <th className="py-2 font-semibold">Tipo</th>
+                          <th className="py-2 font-semibold">Nome</th>
+                          <th className="py-2 font-semibold">Dosagem</th>
+                          <th className="py-2 font-semibold">Frequência</th>
+                          <th className="py-2 font-semibold">Duração</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                ) : (
-                  <p className="text-sm italic text-gray-500">Nenhum item prescrito.</p>
-                )}
-              </div>
+                      </thead>
+                      <tbody className="divide-y divide-gray-100">
+                        {items.map((item, idx) => (
+                          <tr key={idx}>
+                            <td className="py-3">{item.type}</td>
+                            <td className="py-3 font-medium">{item.name}</td>
+                            <td className="py-3">{item.dosage}</td>
+                            <td className="py-3">{item.frequency}</td>
+                            <td className="py-3">{item.duration}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="text-sm italic text-gray-500">Nenhum item prescrito.</p>
+                  )}
+                </div>
+              )}
 
               {/* Current Notes */}
-              {notes && (
+              {!isMinimalist && notes && (
                 <div>
                   <h2 className="text-lg font-bold mb-3 uppercase tracking-wide border-l-4 border-orange-500 pl-2">Orientações (Bahsé / Dietas)</h2>
                   <div className="bg-orange-50 p-4 rounded text-sm text-gray-800 whitespace-pre-wrap border border-orange-100 leading-relaxed">
@@ -614,167 +714,190 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
 
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 no-print">
         {/* Left Column: Context (3 cols) */}
-        <div className="lg:col-span-3 flex flex-col gap-6">
-          <div>
-            <h2 className="text-3xl font-bold tracking-tight text-text-main mb-2">Nova Prescrição</h2>
-            <p className="text-sm text-text-muted">Gestão de tratamentos tradicionais e alopáticos.</p>
-          </div>
-
-          <div className="bg-surface-light rounded-xl p-4 border border-border-light shadow-sm">
-            <div className="flex items-center justify-between mb-4">
-              <h3 className="font-bold text-sm uppercase tracking-wider text-text-muted">Histórico Recente</h3>
-              <button
-                onClick={fetchHistory}
-                className="text-primary hover:text-primary-dark transition-colors"
-                title="Atualizar Histórico"
-              >
-                <span className="material-symbols-outlined text-sm">refresh</span>
-              </button>
+        {!isMinimalist && (
+          <div className="lg:col-span-3 flex flex-col gap-6">
+            <div>
+              <h2 className="text-3xl font-bold tracking-tight text-text-main mb-2">Nova Prescrição</h2>
+              <p className="text-sm text-text-muted">Gestão de tratamentos tradicionais e alopáticos.</p>
             </div>
-            <ul className="space-y-3">
-              {history.length > 0 ? (
-                history.map(apt => (
-                  <li key={apt.id} className="flex flex-col gap-1 pb-3 border-b border-border-light last:border-0 last:pb-0">
-                    <span className="text-xs font-semibold text-primary">{new Date(apt.date).toLocaleDateString()}</span>
-                    <span className="text-sm font-medium">{apt.reason}</span>
-                    <span className="text-xs text-text-muted">{apt.doctorName}</span>
-                    {apt.diagnosis && (
-                      <div className="mt-1 bg-red-50 px-2 py-1 rounded border border-red-100" title={apt.diagnosis}>
-                        <p className="text-[10px] text-red-700 font-medium truncate">
-                          <span className="font-bold">Queixa:</span> {apt.diagnosis}
-                        </p>
-                      </div>
-                    )}
-                  </li>
-                ))
-              ) : (
-                <li className="text-xs text-text-muted italic">Nenhum histórico recente.</li>
-              )}
-            </ul>
-          </div>
 
-          <div className="bg-primary/10 rounded-xl p-4 border border-primary/20">
-            <div className="flex items-start gap-3">
-              <span className="material-symbols-outlined text-primary mt-1">lightbulb</span>
-              <div>
-                <h4 className="font-bold text-sm text-text-main mb-1">Dica do Sistema</h4>
-                <p className="text-xs text-text-muted leading-relaxed">
-                  Lembre-se de registrar o modo de preparo detalhado para chás e infusões tradicionais.
-                </p>
+            <div className="bg-surface-light rounded-xl p-4 border border-border-light shadow-sm">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-bold text-sm uppercase tracking-wider text-text-muted">Histórico Recente</h3>
+                <button
+                  onClick={fetchHistory}
+                  className="text-primary hover:text-primary-dark transition-colors"
+                  title="Atualizar Histórico"
+                >
+                  <span className="material-symbols-outlined text-sm">refresh</span>
+                </button>
+              </div>
+              <ul className="space-y-3">
+                {history.length > 0 ? (
+                  history.slice(0, 3).map(apt => (
+                    <li key={apt.id} className="flex flex-col gap-1 pb-3 border-b border-border-light last:border-0 last:pb-0">
+                      <span className="text-xs font-semibold text-primary">{new Date(apt.date).toLocaleDateString()}</span>
+                      <span className="text-sm font-medium">{apt.reason}</span>
+                      <span className="text-xs text-text-muted">{apt.doctorName}</span>
+                      {apt.diagnosis && (
+                        <div className="mt-1 bg-red-50 px-2 py-1 rounded border border-red-100" title={apt.diagnosis}>
+                          <p className="text-[10px] text-red-700 font-medium truncate">
+                            <span className="font-bold">Anotações:</span> {apt.diagnosis}
+                          </p>
+                        </div>
+                      )}
+                    </li>
+                  ))
+                ) : (
+                  <li className="text-xs text-text-muted italic">Nenhum histórico recente.</li>
+                )}
+              </ul>
+            </div>
+
+            <div className="bg-primary/10 rounded-xl p-4 border border-primary/20">
+              <div className="flex items-start gap-3">
+                <span className="material-symbols-outlined text-primary mt-1">lightbulb</span>
+                <div>
+                  <h4 className="font-bold text-sm text-text-main mb-1">Dica do Sistema</h4>
+                  <p className="text-xs text-text-muted leading-relaxed">
+                    Lembre-se de registrar o modo de preparo detalhado para chás e infusões tradicionais.
+                  </p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Right Column: Form (9 cols) */}
-        <div className="lg:col-span-9 flex flex-col gap-6">
+        {/* Right Column: Form (9 cols or 12 in minimalist mode) */}
+        <div className={`flex flex-col gap-6 ${isMinimalist ? 'lg:col-span-12' : 'lg:col-span-9'}`}>
           {/* 1. Patient Selection */}
-          <section className="bg-surface-light rounded-xl shadow-sm border border-border-light overflow-hidden">
-            <div className="p-6 border-b border-border-light bg-background-light/50">
-              <div className="flex items-center gap-2 text-text-muted">
-                <span className="material-symbols-outlined">person</span>
-                <span className="font-semibold text-sm">Paciente Selecionado</span>
+          <section className={`bg-surface-light rounded-xl shadow-sm border border-border-light overflow-hidden ${isMinimalist ? 'mb-0' : ''}`}>
+            {!isMinimalist && (
+              <div className="p-6 border-b border-border-light bg-background-light/50">
+                <div className="flex items-center gap-2 text-text-muted">
+                  <span className="material-symbols-outlined">person</span>
+                  <span className="font-semibold text-sm">Paciente Selecionado</span>
+                </div>
               </div>
-            </div>
+            )}
 
             {patient ? (
-              <div className="p-6 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
-                <div
-                  className="bg-center bg-no-repeat bg-cover rounded-full size-20 sm:size-24 border-4 border-background-light shadow-sm shrink-0"
-                  style={{ backgroundImage: `url("${patient.image}")` }}
-                ></div>
-                <div className="flex-1 space-y-2 w-full">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
+              isMinimalist ? (
+                <div className="p-4 flex items-center justify-between bg-surface-light">
+                  <div className="flex items-center gap-4">
+                    <div className="bg-primary/10 text-primary w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg uppercase shrink-0">
+                      {patient.name.charAt(0)}
+                    </div>
                     <div>
-                      <h3 className="text-2xl font-bold text-text-main leading-tight">{patient.name}</h3>
-                      <div className="flex items-center gap-2 text-text-muted mt-1">
-                        <span className="material-symbols-outlined text-lg">location_on</span>
-                        <span className="text-sm">{patient.village}</span>
+                      <h3 className="text-base font-bold text-text-main leading-tight">{patient.name}</h3>
+                      <p className="text-xs text-text-muted mt-0.5">
+                        {patient.age} anos • {patient.bloodType || 'N/I'} • <span className={patient.allergies ? 'text-red-600 font-medium' : ''}>{patient.allergies ? `Alergias: ${patient.allergies}` : 'Sem alergias'}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <span className="hidden sm:inline-flex items-center px-2 py-1 rounded-md text-[10px] font-bold bg-primary/10 text-primary-dark">
+                    ID: #{patient.id.substring(0, 6)}
+                  </span>
+                </div>
+              ) : (
+                <div className="p-6 flex flex-col sm:flex-row gap-6 items-start sm:items-center">
+                  <div
+                    className="bg-center bg-no-repeat bg-cover rounded-full size-20 sm:size-24 border-4 border-background-light shadow-sm shrink-0"
+                    style={{ backgroundImage: `url("${patient.image}")` }}
+                  ></div>
+                  <div className="flex-1 space-y-2 w-full">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <h3 className="text-2xl font-bold text-text-main leading-tight">{patient.name}</h3>
+                        <div className="flex items-center gap-2 text-text-muted mt-1">
+                          <span className="material-symbols-outlined text-lg">location_on</span>
+                          <span className="text-sm">{patient.village}</span>
+                        </div>
+                      </div>
+                      <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-primary/20 text-primary-dark">
+                        ID: #{patient.id.substring(0, 6)}
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-border-light w-full">
+                      <div className="bg-background-light/50 p-3 rounded-lg">
+                        <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Idade</span>
+                        <span className="font-bold text-lg text-text-main">{patient.age} <span className="text-xs font-normal text-text-muted">anos</span></span>
+                      </div>
+                      <div className="bg-background-light/50 p-3 rounded-lg">
+                        <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Nascimento</span>
+                        <span className="font-medium text-text-main">{patient.dob ? new Date(patient.dob).toLocaleDateString() : '-'}</span>
+                      </div>
+                      <div className="bg-background-light/50 p-3 rounded-lg">
+                        <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Tipo Sanguíneo</span>
+                        <span className={`font-bold text-lg ${patient.bloodType ? 'text-primary' : 'text-text-muted'}`}>{patient.bloodType || '-'}</span>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${patient.allergies ? 'bg-red-50 border-red-100' : 'bg-background-light/50 border-transparent'}`}>
+                        <span className={`text-xs font-semibold uppercase tracking-wider block mb-1 ${patient.allergies ? 'text-red-700' : 'text-text-muted'}`}>Alergias</span>
+                        <span className={`font-medium ${patient.allergies ? 'text-red-600' : 'text-text-muted italic'}`}>{patient.allergies || 'Nenhuma'}</span>
                       </div>
                     </div>
-                    <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-primary/20 text-primary-dark">
-                      ID: #{patient.id.substring(0, 6)}
-                    </span>
-                  </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-border-light w-full">
-                    <div className="bg-background-light/50 p-3 rounded-lg">
-                      <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Idade</span>
-                      <span className="font-bold text-lg text-text-main">{patient.age} <span className="text-xs font-normal text-text-muted">anos</span></span>
-                    </div>
-                    <div className="bg-background-light/50 p-3 rounded-lg">
-                      <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Nascimento</span>
-                      <span className="font-medium text-text-main">{patient.dob ? new Date(patient.dob).toLocaleDateString() : '-'}</span>
-                    </div>
-                    <div className="bg-background-light/50 p-3 rounded-lg">
-                      <span className="text-xs font-semibold text-text-muted uppercase tracking-wider block mb-1">Tipo Sanguíneo</span>
-                      <span className={`font-bold text-lg ${patient.bloodType ? 'text-primary' : 'text-text-muted'}`}>{patient.bloodType || '-'}</span>
-                    </div>
-                    <div className={`p-3 rounded-lg border ${patient.allergies ? 'bg-red-50 border-red-100' : 'bg-background-light/50 border-transparent'}`}>
-                      <span className={`text-xs font-semibold uppercase tracking-wider block mb-1 ${patient.allergies ? 'text-red-700' : 'text-text-muted'}`}>Alergias</span>
-                      <span className={`font-medium ${patient.allergies ? 'text-red-600' : 'text-text-muted italic'}`}>{patient.allergies || 'Nenhuma'}</span>
-                    </div>
-                  </div>
 
-                  {/* Editable Conditions Section */}
-                  <div className="mt-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-orange-500">medical_services</span>
-                        <span className="text-sm font-bold text-text-main uppercase tracking-wider">Condições Crônicas</span>
+                    {/* Editable Conditions Section */}
+                    <div className="mt-6">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <span className="material-symbols-outlined text-orange-500">medical_services</span>
+                          <span className="text-sm font-bold text-text-main uppercase tracking-wider">Condições Crônicas</span>
+                        </div>
+                        {!isEditingConditions ? (
+                          <button
+                            onClick={() => setIsEditingConditions(true)}
+                            className="text-primary hover:text-primary-dark text-xs font-bold uppercase tracking-wide flex items-center gap-1 transition-colors px-3 py-1.5 rounded-full hover:bg-primary/10"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">edit</span>
+                            Editar
+                          </button>
+                        ) : (
+                          <div className="flex gap-2">
+                            <button
+                              onClick={() => {
+                                setIsEditingConditions(false);
+                                setConditions(patient.conditions || '');
+                              }}
+                              className="text-text-muted hover:text-text-main text-xs font-semibold px-3 py-1.5"
+                              disabled={isSavingConditions}
+                            >
+                              Cancelar
+                            </button>
+                            <button
+                              onClick={handleSaveConditions}
+                              className="text-white bg-primary hover:bg-primary-dark text-xs font-bold uppercase tracking-wide px-4 py-1.5 rounded-full shadow-sm disabled:opacity-50 transition-all"
+                              disabled={isSavingConditions}
+                            >
+                              {isSavingConditions ? 'Salvando...' : 'Salvar'}
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      {!isEditingConditions ? (
-                        <button
-                          onClick={() => setIsEditingConditions(true)}
-                          className="text-primary hover:text-primary-dark text-xs font-bold uppercase tracking-wide flex items-center gap-1 transition-colors px-3 py-1.5 rounded-full hover:bg-primary/10"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">edit</span>
-                          Editar
-                        </button>
+
+                      {isEditingConditions ? (
+                        <div className="relative">
+                          <textarea
+                            value={conditions}
+                            onChange={(e) => setConditions(e.target.value)}
+                            className="w-full rounded-xl border-2 border-primary/20 bg-white p-4 text-sm focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm"
+                            rows={3}
+                            placeholder="Descreva as condições crônicas do paciente..."
+                            autoFocus
+                          />
+                          <span className="absolute bottom-3 right-3 text-xs text-text-muted">Pressione Salvar para registrar</span>
+                        </div>
                       ) : (
-                        <div className="flex gap-2">
-                          <button
-                            onClick={() => {
-                              setIsEditingConditions(false);
-                              setConditions(patient.conditions || '');
-                            }}
-                            className="text-text-muted hover:text-text-main text-xs font-semibold px-3 py-1.5"
-                            disabled={isSavingConditions}
-                          >
-                            Cancelar
-                          </button>
-                          <button
-                            onClick={handleSaveConditions}
-                            className="text-white bg-primary hover:bg-primary-dark text-xs font-bold uppercase tracking-wide px-4 py-1.5 rounded-full shadow-sm disabled:opacity-50 transition-all"
-                            disabled={isSavingConditions}
-                          >
-                            {isSavingConditions ? 'Salvando...' : 'Salvar'}
-                          </button>
+                        <div className={`rounded-xl p-4 border ${patient.conditions ? 'bg-orange-50/50 border-orange-100' : 'bg-background-light border-transparent'}`}>
+                          <p className={`text-sm leading-relaxed ${patient.conditions ? 'text-text-main font-medium' : 'text-text-muted italic'}`}>
+                            {patient.conditions || "Nenhuma condição crônica registrada."}
+                          </p>
                         </div>
                       )}
                     </div>
-
-                    {isEditingConditions ? (
-                      <div className="relative">
-                        <textarea
-                          value={conditions}
-                          onChange={(e) => setConditions(e.target.value)}
-                          className="w-full rounded-xl border-2 border-primary/20 bg-white p-4 text-sm focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm"
-                          rows={3}
-                          placeholder="Descreva as condições crônicas do paciente..."
-                          autoFocus
-                        />
-                        <span className="absolute bottom-3 right-3 text-xs text-text-muted">Pressione Salvar para registrar</span>
-                      </div>
-                    ) : (
-                      <div className={`rounded-xl p-4 border ${patient.conditions ? 'bg-orange-50/50 border-orange-100' : 'bg-background-light border-transparent'}`}>
-                        <p className={`text-sm leading-relaxed ${patient.conditions ? 'text-text-main font-medium' : 'text-text-muted italic'}`}>
-                          {patient.conditions || "Nenhuma condição crônica registrada."}
-                        </p>
-                      </div>
-                    )}
                   </div>
                 </div>
-              </div>
+              )
 
             ) : (
               <div className="p-6 text-center text-text-muted">
@@ -783,12 +906,88 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
             )}
           </section>
 
+          {/* History in Minimalist Mode */}
+          {isMinimalist && history.length > 0 && (
+            <section className="bg-surface-light rounded-xl shadow-sm border border-border-light p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-primary">history</span>
+                <h3 className="text-lg font-bold text-text-main">Histórico de Consultas</h3>
+              </div>
+              <div className="space-y-4">
+                {history.map(apt => {
+                  const isExpanded = expandedApts[apt.id];
+                  const hasSummary = !!apt.aiSummary;
+                  return (
+                    <div key={apt.id} className="bg-background-light p-4 rounded-lg border border-border-light cursor-pointer hover:bg-surface-light transition-colors" onClick={() => toggleExpand(apt.id)}>
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="font-bold text-text-main">{new Date(apt.date).toLocaleDateString()}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs text-text-muted">{apt.doctorName}</span>
+                          <span className={`material-symbols-outlined text-[18px] text-text-muted transition-transform ${isExpanded ? 'rotate-180' : ''}`}>expand_more</span>
+                        </div>
+                      </div>
+
+                      {hasSummary && !isExpanded && (
+                        <div className="flex items-start gap-2 bg-purple-50/50 p-3 rounded-lg border border-purple-100/50 mt-2">
+                          <span className="material-symbols-outlined text-[16px] text-purple-500 mt-0.5 shrink-0">auto_awesome</span>
+                          <p className="text-sm font-medium text-purple-900 leading-relaxed">{apt.aiSummary}</p>
+                        </div>
+                      )}
+
+                      {!hasSummary && !isExpanded && apt.diagnosis && (
+                        <div className="mt-2">
+                          <p className="text-sm text-text-main line-clamp-2">{apt.diagnosis}</p>
+                          <button 
+                            onClick={(e) => { e.stopPropagation(); handleGenerateSummary(apt.id); }}
+                            disabled={generatingSummaryId === apt.id}
+                            className="mt-2 text-xs font-bold text-purple-600 hover:text-purple-700 flex items-center gap-1 disabled:opacity-50"
+                          >
+                            <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
+                            {generatingSummaryId === apt.id ? 'Gerando...' : 'Gerar Resumo com IA ✨'}
+                          </button>
+                        </div>
+                      )}
+
+                      {!hasSummary && !isExpanded && !apt.diagnosis && (
+                        <p className="text-sm italic text-text-muted mt-2">Nenhuma anotação registrada.</p>
+                      )}
+
+                      {isExpanded && (
+                        <div className="mt-4 pt-4 border-t border-border-light animate-in fade-in">
+                          {hasSummary && (
+                            <div className="flex items-start gap-2 bg-purple-50 p-3 rounded-lg border border-purple-100 mb-4">
+                              <span className="material-symbols-outlined text-[16px] text-purple-500 mt-0.5 shrink-0">auto_awesome</span>
+                              <p className="text-sm font-medium text-purple-900 leading-relaxed">{apt.aiSummary}</p>
+                            </div>
+                          )}
+                          <h4 className="text-xs font-bold text-text-muted uppercase tracking-wider mb-2">Anotações Completas</h4>
+                          <p className="text-sm text-text-main whitespace-pre-wrap leading-relaxed">{apt.diagnosis || <span className="italic text-text-muted">Vazio.</span>}</p>
+                          
+                          {!hasSummary && apt.diagnosis && (
+                            <button 
+                              onClick={(e) => { e.stopPropagation(); handleGenerateSummary(apt.id); }}
+                              disabled={generatingSummaryId === apt.id}
+                              className="mt-4 px-3 py-1.5 bg-purple-100 text-purple-700 text-xs font-bold rounded-lg hover:bg-purple-200 transition-colors flex items-center gap-1 w-fit disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[14px]">auto_awesome</span>
+                              {generatingSummaryId === apt.id ? 'Gerando resumo...' : 'Resumir esta consulta com IA'}
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </section>
+          )}
+
 
 
 
 
           {/* 1.5 Growth Charts for Children */}
-          {isChild && (
+          {!isMinimalist && isChild && (
             <section className="bg-surface-light rounded-xl shadow-sm border border-border-light p-6 mb-6">
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-2">
@@ -812,18 +1011,94 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
           <section className="bg-surface-light rounded-xl shadow-sm border border-border-light p-6">
             <div className="flex items-center gap-2 mb-3">
               <span className="material-symbols-outlined text-primary">person_alert</span>
-              <h3 className="text-lg font-bold text-text-main">Queixa Principal </h3>
+              <h3 className="text-lg font-bold text-text-main">Anotações </h3>
             </div>
             <textarea
               value={diagnosis}
               onChange={(e) => setDiagnosis(e.target.value)}
-              className="w-full rounded-xl border border-border-light bg-white p-4 text-sm focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm"
-              rows={3}
+              className={`w-full rounded-xl border border-border-light bg-white p-4 text-sm focus:ring-4 focus:ring-primary/10 focus:border-primary transition-all shadow-sm ${isMinimalist ? 'h-[500px] resize-none' : 'min-h-[120px] resize-y'}`}
+              rows={isMinimalist ? undefined : 3}
               placeholder="Descreva os sintomas, queixas do paciente ou diagnóstico identificado..."
             />
 
             {/* ICD Search */}
             <div className="mt-4 pt-4 border-t border-border-light">
+              {isMinimalist && suggestedCids.length > 0 && (
+                <div className="mb-4 bg-purple-50 border border-purple-200 rounded-xl p-4 flex items-start sm:items-center justify-between shadow-sm animate-in fade-in slide-in-from-top-2 gap-4 flex-col sm:flex-row">
+                  <div className="flex items-start sm:items-center gap-3 w-full">
+                    <div className="bg-purple-100 p-2 rounded-lg shrink-0 hidden sm:block">
+                      <span className="material-symbols-outlined text-purple-600">auto_awesome</span>
+                    </div>
+                    <div className="w-full">
+                      <p className="text-[10px] font-bold text-purple-800 uppercase tracking-wider mb-2 flex items-center gap-1">
+                        <span className="material-symbols-outlined text-[14px] sm:hidden">auto_awesome</span>
+                        Sugestões Inteligentes (Gemini)
+                      </p>
+                      <div className="flex flex-col gap-2 mb-2 mt-2">
+                        {suggestedCids.map(cid => (
+                          <div key={cid.code} className="flex items-center gap-2 group">
+                            <span className="text-sm font-bold text-purple-900 bg-purple-100/50 px-2 py-1 rounded">
+                              {cid.code} - {cid.description}
+                            </span>
+                            <button 
+                              onClick={() => {
+                                if (!selectedCids.some(c => c.code === cid.code)) {
+                                  setSelectedCids([...selectedCids, cid]);
+                                }
+                                setSuggestedCids(suggestedCids.filter(c => c.code !== cid.code));
+                              }}
+                              className="p-1 text-purple-600 hover:text-white hover:bg-purple-600 rounded transition-colors opacity-80 hover:opacity-100"
+                              title="Adicionar apenas este CID"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">add</span>
+                            </button>
+                            <button 
+                              onClick={() => {
+                                setSuggestedCids(suggestedCids.filter(c => c.code !== cid.code));
+                              }}
+                              className="p-1 text-purple-400 hover:text-purple-600 hover:bg-purple-100 rounded transition-colors opacity-80 hover:opacity-100"
+                              title="Descartar este CID"
+                            >
+                              <span className="material-symbols-outlined text-[18px]">close</span>
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                      <p className="text-xs text-purple-700/80">Esses CIDs serão adicionados ao salvar. Se preferir, aceite ou descarte individualmente.</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2 self-end sm:self-auto shrink-0 mt-2 sm:mt-0 items-end">
+                    {suggestedCids.length > 1 && (
+                      <button 
+                        onClick={() => {
+                            const newCids = [...selectedCids];
+                            for (const cid of suggestedCids) {
+                                if (!newCids.some(c => c.code === cid.code)) {
+                                    newCids.push(cid);
+                                }
+                            }
+                            setSelectedCids(newCids);
+                            setSuggestedCids([]);
+                        }}
+                        className="px-4 py-2 bg-purple-600 text-white text-xs font-bold rounded-lg hover:bg-purple-700 transition-colors shadow-sm whitespace-nowrap w-full"
+                      >
+                        Confirmar Todos
+                      </button>
+                    )}
+                    <button onClick={() => setSuggestedCids([])} className="px-3 py-2 text-purple-600 hover:text-purple-700 hover:bg-purple-100 rounded-lg transition-colors text-xs font-bold w-full text-center">
+                      Descartar {suggestedCids.length > 1 ? 'Todos' : ''}
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {isMinimalist && isSuggestingCid && suggestedCids.length === 0 && (
+                <div className="mb-4 flex items-center gap-2 text-purple-500 text-xs font-medium animate-pulse">
+                  <span className="material-symbols-outlined text-[16px]">sync</span>
+                  <span>Analisando anotações com IA...</span>
+                </div>
+              )}
+
               <label className="block text-sm font-bold text-text-main mb-2">Código CID (Opcional)</label>
               <div className="relative mb-2">
                 <input
@@ -883,249 +1158,255 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
           </section>
 
           {/* 2. Prescription Items */}
-          <section className="bg-surface-light rounded-xl shadow-sm border border-border-light flex flex-col">
-            <div className="px-6 py-4 border-b border-border-light flex justify-between items-center">
-              <h3 className="text-lg font-bold text-text-main">Itens da Prescrição</h3>
-              <span className="text-xs bg-background-light px-2 py-1 rounded text-text-muted">{items.length} itens adicionados</span>
-            </div>
+          {!isMinimalist && (
+            <section className="bg-surface-light rounded-xl shadow-sm border border-border-light flex flex-col">
+              <div className="px-6 py-4 border-b border-border-light flex justify-between items-center">
+                <h3 className="text-lg font-bold text-text-main">Itens da Prescrição</h3>
+                <span className="text-xs bg-background-light px-2 py-1 rounded text-text-muted">{items.length} itens adicionados</span>
+              </div>
 
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-sm">
-                <thead className="bg-background-light text-text-muted uppercase tracking-wider text-xs">
-                  <tr>
-                    <th className="px-6 py-3 font-semibold">Tipo</th>
-                    <th className="px-6 py-3 font-semibold">Medicamento / Planta</th>
-                    <th className="px-6 py-3 font-semibold">Dosagem / Preparo</th>
-                    <th className="px-6 py-3 font-semibold">Frequência</th>
-                    <th className="px-6 py-3 font-semibold">Duração</th>
-                    <th className="px-6 py-3 font-semibold w-20"></th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border-light">
-                  {items.length === 0 ? (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-sm">
+                  <thead className="bg-background-light text-text-muted uppercase tracking-wider text-xs">
                     <tr>
-                      <td colSpan={5} className="px-6 py-8 text-center text-text-muted italic">
-                        Nenhum item adicionado à prescrição. Utilize o formulário abaixo.
-                      </td>
+                      <th className="px-6 py-3 font-semibold">Tipo</th>
+                      <th className="px-6 py-3 font-semibold">Medicamento / Planta</th>
+                      <th className="px-6 py-3 font-semibold">Dosagem / Preparo</th>
+                      <th className="px-6 py-3 font-semibold">Frequência</th>
+                      <th className="px-6 py-3 font-semibold">Duração</th>
+                      <th className="px-6 py-3 font-semibold w-20"></th>
                     </tr>
-                  ) : (
-                    items.map(item => (
-                      <tr key={item.id} className="hover:bg-background-light transition-colors">
-                        <td className="px-6 py-4">
-                          <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${item.type === 'Alopático' ? 'bg-blue-100 text-blue-800' : 'bg-primary/20 text-primary-dark'
-                            }`}>
-                            <span className="material-symbols-outlined text-[14px]">
-                              {item.type === 'Alopático' ? 'pill' : 'eco'}
-                            </span>
-                            {item.type}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 font-medium text-text-main">
-                          {item.name}
-                          {(item.treatmentDetails || item.plantDetails) && (
-                            <span className="ml-2 inline-flex items-center text-green-600 text-xs bg-green-50 px-1.5 py-0.5 rounded border border-green-200" title="Item vinculado à Farmácia Viva">
-                              <span className="material-symbols-outlined text-[12px] mr-1">link</span>
-                              Vinculado
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-text-muted">{item.dosage}</td>
-                        <td className="px-6 py-4 text-text-muted">{item.frequency}</td>
-                        <td className="px-6 py-4 text-text-muted">
-                          {item.duration || '-'}
-                          {item.endDate && <span className="block text-xs text-text-muted/70">Até: {new Date(item.endDate).toLocaleDateString()}</span>}
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <button onClick={() => handleRemoveItem(item.id)} className="text-text-muted hover:text-red-500 transition-colors">
-                            <span className="material-symbols-outlined">delete</span>
-                          </button>
+                  </thead>
+                  <tbody className="divide-y divide-border-light">
+                    {items.length === 0 ? (
+                      <tr>
+                        <td colSpan={5} className="px-6 py-8 text-center text-text-muted italic">
+                          Nenhum item adicionado à prescrição. Utilize o formulário abaixo.
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    ) : (
+                      items.map(item => (
+                        <tr key={item.id} className="hover:bg-background-light transition-colors">
+                          <td className="px-6 py-4">
+                            <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs font-medium ${item.type === 'Alopático' ? 'bg-blue-100 text-blue-800' : 'bg-primary/20 text-primary-dark'
+                              }`}>
+                              <span className="material-symbols-outlined text-[14px]">
+                                {item.type === 'Alopático' ? 'pill' : 'eco'}
+                              </span>
+                              {item.type}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 font-medium text-text-main">
+                            {item.name}
+                            {(item.treatmentDetails || item.plantDetails) && (
+                              <span className="ml-2 inline-flex items-center text-green-600 text-xs bg-green-50 px-1.5 py-0.5 rounded border border-green-200" title="Item vinculado à Farmácia Viva">
+                                <span className="material-symbols-outlined text-[12px] mr-1">link</span>
+                                Vinculado
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 text-text-muted">{item.dosage}</td>
+                          <td className="px-6 py-4 text-text-muted">{item.frequency}</td>
+                          <td className="px-6 py-4 text-text-muted">
+                            {item.duration || '-'}
+                            {item.endDate && <span className="block text-xs text-text-muted/70">Até: {new Date(item.endDate).toLocaleDateString()}</span>}
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <button onClick={() => handleRemoveItem(item.id)} className="text-text-muted hover:text-red-500 transition-colors">
+                              <span className="material-symbols-outlined">delete</span>
+                            </button>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
 
-            {/* Add New Item */}
-            <div className="p-4 bg-background-light/50 border-t border-border-light">
-              <p className="text-xs font-semibold text-text-muted mb-3 uppercase tracking-wide">Adicionar Novo Item</p>
-              <div className="grid grid-cols-1 md:grid-cols-15 gap-3 items-end">
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-text-muted mb-1">Tipo</label>
-                  <select
-                    value={newItemType}
-                    onChange={(e) => setNewItemType(e.target.value as any)}
-                    className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm"
-                  >
-                    <option value="Alopático">Alopático</option>
-                    <option value="Tradicional">Tradicional</option>
-                  </select>
-                </div>
-                <div className="md:col-span-3">
-                  <label className="block text-xs font-medium text-text-muted mb-1">Nome</label>
-                  <div className="relative">
+              {/* Add New Item */}
+              <div className="p-4 bg-background-light/50 border-t border-border-light">
+                <p className="text-xs font-semibold text-text-muted mb-3 uppercase tracking-wide">Adicionar Novo Item</p>
+                <div className="grid grid-cols-1 md:grid-cols-15 gap-3 items-end">
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-text-muted mb-1">Tipo</label>
+                    <select
+                      value={newItemType}
+                      onChange={(e) => setNewItemType(e.target.value as any)}
+                      className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm"
+                    >
+                      <option value="Alopático">Alopático</option>
+                      <option value="Tradicional">Tradicional</option>
+                    </select>
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-medium text-text-muted mb-1">Nome</label>
+                    <div className="relative">
+                      <input
+                        value={newItemName}
+                        onChange={(e) => setNewItemName(e.target.value)}
+                        className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted pr-10"
+                        placeholder="Nome do Medicamento/Planta"
+                        type="text"
+                      />
+                      <button
+                        onClick={() => setIsPharmacyModalOpen(!isPharmacyModalOpen)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:bg-primary/10 p-1 rounded transition-colors"
+                        title="Buscar na Farmácia Viva"
+                      >
+                        <span className="material-symbols-outlined text-[20px]">spa</span>
+                      </button>
+
+                      {isPharmacyModalOpen && (
+                        <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-xl border border-border-light z-50 max-h-60 overflow-y-auto">
+                          <div className="p-2 sticky top-0 bg-white border-b border-border-light">
+                            <p className="text-xs font-bold text-text-muted uppercase px-2">Farmácia Viva</p>
+                          </div>
+                          {pharmacyItems.filter(i => i.name.toLowerCase().includes(newItemName.toLowerCase())).map((item: any) => (
+                            <button
+                              key={item.id}
+                              onClick={() => handleSelectPharmacyItem(item)}
+                              className="w-full text-left px-4 py-2 hover:bg-background-light text-sm flex items-center justify-between group"
+                            >
+                              <span>{item.name}</span>
+                              <span className="text-xs text-text-muted group-hover:text-primary border border-border-light group-hover:border-primary px-1.5 py-0.5 rounded">
+                                {item.scientificName ? 'Planta' : 'Tratamento'}
+                              </span>
+                            </button>
+                          ))}
+                          {pharmacyItems.length === 0 && <p className="p-4 text-xs text-text-muted italic">Nenhum item carregado.</p>}
+                        </div>
+                      )}
+
+                      {isPharmacyModalOpen && (
+                        <div className="fixed inset-0 z-40" onClick={() => setIsPharmacyModalOpen(false)}></div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-medium text-text-muted mb-1">Dosagem</label>
                     <input
-                      value={newItemName}
-                      onChange={(e) => setNewItemName(e.target.value)}
-                      className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted pr-10"
-                      placeholder="Nome do Medicamento/Planta"
+                      value={newItemDosage}
+                      onChange={(e) => setNewItemDosage(e.target.value)}
+                      className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted"
+                      placeholder="Ex: 500mg ou 1 Punhado"
                       type="text"
                     />
+                  </div>
+                  <div className="md:col-span-3">
+                    <label className="block text-xs font-medium text-text-muted mb-1">Frequência</label>
+                    <input
+                      value={newItemFrequency}
+                      onChange={(e) => setNewItemFrequency(e.target.value)}
+                      className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted"
+                      placeholder="Ex: A cada 8 horas"
+                      type="text"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-text-muted mb-1">Duração</label>
+                    <input
+                      value={newItemDuration}
+                      onChange={(e) => setNewItemDuration(e.target.value)}
+                      className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted"
+                      placeholder="Ex: 7 dias"
+                      type="text"
+                    />
+                  </div>
+                  <div className="md:col-span-2">
+                    <label className="block text-xs font-medium text-text-muted mb-1">Data Final</label>
+                    <input
+                      value={newItemEndDate}
+                      onChange={(e) => setNewItemEndDate(e.target.value)}
+                      className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm"
+                      title="Data de Término (Opcional)"
+                      type="date"
+                    />
+                  </div>
+                  <div className="md:col-span-1">
                     <button
-                      onClick={() => setIsPharmacyModalOpen(!isPharmacyModalOpen)}
-                      className="absolute right-2 top-1/2 -translate-y-1/2 text-primary hover:bg-primary/10 p-1 rounded transition-colors"
-                      title="Buscar na Farmácia Viva"
+                      onClick={handleAddItem}
+                      disabled={!newItemName || !newItemDosage || !newItemFrequency || !newItemDuration}
+                      className="w-full flex items-center justify-center bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg py-2.5 shadow-md transition-colors"
                     >
-                      <span className="material-symbols-outlined text-[20px]">spa</span>
+                      <span className="material-symbols-outlined">add</span>
                     </button>
-
-                    {isPharmacyModalOpen && (
-                      <div className="absolute top-full left-0 w-full mt-2 bg-white rounded-xl shadow-xl border border-border-light z-50 max-h-60 overflow-y-auto">
-                        <div className="p-2 sticky top-0 bg-white border-b border-border-light">
-                          <p className="text-xs font-bold text-text-muted uppercase px-2">Farmácia Viva</p>
-                        </div>
-                        {pharmacyItems.filter(i => i.name.toLowerCase().includes(newItemName.toLowerCase())).map((item: any) => (
-                          <button
-                            key={item.id}
-                            onClick={() => handleSelectPharmacyItem(item)}
-                            className="w-full text-left px-4 py-2 hover:bg-background-light text-sm flex items-center justify-between group"
-                          >
-                            <span>{item.name}</span>
-                            <span className="text-xs text-text-muted group-hover:text-primary border border-border-light group-hover:border-primary px-1.5 py-0.5 rounded">
-                              {item.scientificName ? 'Planta' : 'Tratamento'}
-                            </span>
-                          </button>
-                        ))}
-                        {pharmacyItems.length === 0 && <p className="p-4 text-xs text-text-muted italic">Nenhum item carregado.</p>}
-                      </div>
-                    )}
-
-                    {isPharmacyModalOpen && (
-                      <div className="fixed inset-0 z-40" onClick={() => setIsPharmacyModalOpen(false)}></div>
-                    )}
                   </div>
                 </div>
-                <div className="md:col-span-3">
-                  <label className="block text-xs font-medium text-text-muted mb-1">Dosagem</label>
-                  <input
-                    value={newItemDosage}
-                    onChange={(e) => setNewItemDosage(e.target.value)}
-                    className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted"
-                    placeholder="Ex: 500mg ou 1 Punhado"
-                    type="text"
-                  />
-                </div>
-                <div className="md:col-span-3">
-                  <label className="block text-xs font-medium text-text-muted mb-1">Frequência</label>
-                  <input
-                    value={newItemFrequency}
-                    onChange={(e) => setNewItemFrequency(e.target.value)}
-                    className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted"
-                    placeholder="Ex: A cada 8 horas"
-                    type="text"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-text-muted mb-1">Duração</label>
-                  <input
-                    value={newItemDuration}
-                    onChange={(e) => setNewItemDuration(e.target.value)}
-                    className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm placeholder-text-muted"
-                    placeholder="Ex: 7 dias"
-                    type="text"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label className="block text-xs font-medium text-text-muted mb-1">Data Final</label>
-                  <input
-                    value={newItemEndDate}
-                    onChange={(e) => setNewItemEndDate(e.target.value)}
-                    className="w-full rounded-lg border-none bg-white py-2.5 px-3 text-sm text-text-main focus:ring-1 focus:ring-primary shadow-sm"
-                    title="Data de Término (Opcional)"
-                    type="date"
-                  />
-                </div>
-                <div className="md:col-span-1">
+              </div>
+            </section>
+          )}
+
+          {/* 3. Notes */}
+          {!isMinimalist && (
+            <section className="bg-surface-light rounded-xl shadow-sm border border-border-light flex flex-col p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <span className="material-symbols-outlined text-primary">local_florist</span>
+                <h3 className="text-lg font-bold text-text-main">Orientações Tradicionais (Bahsé)</h3>
+              </div>
+              <div className="relative">
+                <textarea
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full rounded-lg border-none bg-background-light p-4 text-text-main focus:ring-2 focus:ring-primary resize-none placeholder-text-muted leading-relaxed"
+                  placeholder="Descreva aqui os procedimentos tradicionais, rituais de preparo, dietas alimentares específicas ou restrições culturais necessárias para o tratamento..."
+                  rows={5}
+                ></textarea>
+                <div className="absolute bottom-3 right-3 flex gap-2">
                   <button
-                    onClick={handleAddItem}
-                    disabled={!newItemName || !newItemDosage || !newItemFrequency || !newItemDuration}
-                    className="w-full flex items-center justify-center bg-primary hover:bg-primary-dark disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg py-2.5 shadow-md transition-colors"
+                    onClick={() => setNotes(prev => prev + 'Preparo: Fazer infusão com água fervente e deixar abafado por 10 minutos.\n')}
+                    className="p-1 text-text-muted hover:text-primary transition-colors"
+                    title="Inserir modelo de preparo de chá"
                   >
-                    <span className="material-symbols-outlined">add</span>
+                    <span className="material-symbols-outlined text-sm">water_drop</span>
+                  </button>
+                  <button
+                    onClick={() => setNotes(prev => prev + 'Dieta: Evitar alimentos gordurosos e pimenta (pimenta jiquitaia permitida com moderação).\n')}
+                    className="p-1 text-text-muted hover:text-primary transition-colors"
+                    title="Inserir restrição alimentar"
+                  >
+                    <span className="material-symbols-outlined text-sm">no_food</span>
                   </button>
                 </div>
               </div>
-            </div>
-          </section>
-
-          {/* 3. Notes */}
-          <section className="bg-surface-light rounded-xl shadow-sm border border-border-light flex flex-col p-6">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="material-symbols-outlined text-primary">local_florist</span>
-              <h3 className="text-lg font-bold text-text-main">Orientações Tradicionais (Bahsé)</h3>
-            </div>
-            <div className="relative">
-              <textarea
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-                className="w-full rounded-lg border-none bg-background-light p-4 text-text-main focus:ring-2 focus:ring-primary resize-none placeholder-text-muted leading-relaxed"
-                placeholder="Descreva aqui os procedimentos tradicionais, rituais de preparo, dietas alimentares específicas ou restrições culturais necessárias para o tratamento..."
-                rows={5}
-              ></textarea>
-              <div className="absolute bottom-3 right-3 flex gap-2">
-                <button
-                  onClick={() => setNotes(prev => prev + 'Preparo: Fazer infusão com água fervente e deixar abafado por 10 minutos.\n')}
-                  className="p-1 text-text-muted hover:text-primary transition-colors"
-                  title="Inserir modelo de preparo de chá"
-                >
-                  <span className="material-symbols-outlined text-sm">water_drop</span>
-                </button>
-                <button
-                  onClick={() => setNotes(prev => prev + 'Dieta: Evitar alimentos gordurosos e pimenta (pimenta jiquitaia permitida com moderação).\n')}
-                  className="p-1 text-text-muted hover:text-primary transition-colors"
-                  title="Inserir restrição alimentar"
-                >
-                  <span className="material-symbols-outlined text-sm">no_food</span>
-                </button>
-              </div>
-            </div>
-          </section>
+            </section>
+          )}
 
           {/* Footer Actions */}
           <div className="flex flex-col gap-4 mt-2 border-t border-border-light pt-4">
 
             {/* Follow-up Scheduling */}
-            <div className="flex items-center justify-end gap-4 p-4 bg-blue-50/50 rounded-lg border border-blue-100">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="scheduleReturn"
-                  checked={scheduleReturn}
-                  onChange={(e) => setScheduleReturn(e.target.checked)}
-                  className="rounded text-primary focus:ring-primary h-4 w-4 border-gray-300"
-                />
-                <label htmlFor="scheduleReturn" className="text-sm font-medium text-text-main cursor-pointer select-none">Agendar Retorno</label>
-              </div>
-
-              {scheduleReturn && (
-                <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
-                  <span className="text-sm text-text-muted">Para:</span>
+            {!isMinimalist && (
+              <div className="flex items-center justify-end gap-4 p-4 bg-blue-50/50 rounded-lg border border-blue-100">
+                <div className="flex items-center gap-2">
                   <input
-                    type="date"
-                    value={returnDate}
-                    onChange={(e) => setReturnDate(e.target.value)}
-                    className="rounded-lg border-border-light text-sm p-2 focus:ring-1 focus:ring-primary focus:border-primary shadow-sm"
+                    type="checkbox"
+                    id="scheduleReturn"
+                    checked={scheduleReturn}
+                    onChange={(e) => setScheduleReturn(e.target.checked)}
+                    className="rounded text-primary focus:ring-primary h-4 w-4 border-gray-300"
                   />
-                  <input
-                    type="time"
-                    value={returnTime}
-                    onChange={(e) => setReturnTime(e.target.value)}
-                    className="rounded-lg border-border-light text-sm p-2 focus:ring-1 focus:ring-primary focus:border-primary shadow-sm"
-                  />
+                  <label htmlFor="scheduleReturn" className="text-sm font-medium text-text-main cursor-pointer select-none">Agendar Retorno</label>
                 </div>
-              )}
-            </div>
+
+                {scheduleReturn && (
+                  <div className="flex items-center gap-2 animate-in fade-in slide-in-from-left-2 duration-300">
+                    <span className="text-sm text-text-muted">Para:</span>
+                    <input
+                      type="date"
+                      value={returnDate}
+                      onChange={(e) => setReturnDate(e.target.value)}
+                      className="rounded-lg border-border-light text-sm p-2 focus:ring-1 focus:ring-primary focus:border-primary shadow-sm"
+                    />
+                    <input
+                      type="time"
+                      value={returnTime}
+                      onChange={(e) => setReturnTime(e.target.value)}
+                      className="rounded-lg border-border-light text-sm p-2 focus:ring-1 focus:ring-primary focus:border-primary shadow-sm"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex flex-col sm:flex-row justify-end gap-4">
               <button
