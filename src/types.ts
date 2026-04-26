@@ -41,6 +41,7 @@ export interface Patient {
   uf?: string;
   city?: string;
   address?: string;
+  global_ai_summary?: string;
 }
 
 export interface Appointment {

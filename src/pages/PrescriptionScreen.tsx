@@ -1032,7 +1032,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                     <div className="w-full">
                       <p className="text-[10px] font-bold text-purple-800 uppercase tracking-wider mb-2 flex items-center gap-1">
                         <span className="material-symbols-outlined text-[14px] sm:hidden">auto_awesome</span>
-                        Sugestões Inteligentes (Gemini)
+                        Sugestões com IA
                       </p>
                       <div className="flex flex-col gap-2 mb-2 mt-2">
                         {suggestedCids.map(cid => (

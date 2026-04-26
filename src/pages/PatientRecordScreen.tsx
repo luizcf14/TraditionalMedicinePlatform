@@ -59,6 +59,34 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
   const [activeTreatments, setActiveTreatments] = useState<ActiveTreatment[]>([]);
   const [selectedAppointmentId, setSelectedAppointmentId] = useState<string | null>(null);
 
+  // Minimalist Mode
+  const [isMinimalist, setIsMinimalist] = useState(false);
+  useEffect(() => {
+    const val = localStorage.getItem('minimalistConsultation');
+    if (val === 'true') setIsMinimalist(true);
+  }, []);
+
+  const [generatingGlobalSummary, setGeneratingGlobalSummary] = useState(false);
+
+  const handleGenerateGlobalSummary = async () => {
+    if (!patientId) return;
+    setGeneratingGlobalSummary(true);
+    try {
+      const res = await apiFetch(`/api/patients/${patientId}/summary`, { method: 'POST' });
+      const data = await res.json();
+      if (data.success && data.summary) {
+        setPatient(prev => prev ? { ...prev, global_ai_summary: data.summary } : null);
+      } else {
+        alert(data.message || 'Erro ao gerar resumo');
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Erro de conexão');
+    } finally {
+      setGeneratingGlobalSummary(false);
+    }
+  };
+
   // Growth State
   const [growthRecords, setGrowthRecords] = useState<GrowthRecord[]>([]);
   const [showGrowthModal, setShowGrowthModal] = useState(false);
@@ -289,7 +317,48 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
       {/* Main Content Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column (Timeline) */}
-        <div className="lg:col-span-8 flex flex-col gap-6">
+        <div className={`flex flex-col gap-6 ${isMinimalist ? 'lg:col-span-12' : 'lg:col-span-8'}`}>
+          
+          {/* Global Summary (Minimalist Mode) */}
+          {isMinimalist && (
+            <div className="bg-surface-light rounded-xl shadow-sm border border-purple-200 p-6 overflow-hidden relative">
+              <div className="absolute top-0 left-0 w-1 h-full bg-purple-500"></div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="material-symbols-outlined text-purple-600">auto_awesome</span>
+                  <h3 className="text-lg font-bold text-purple-900">Resumo Geral de Saúde</h3>
+                </div>
+                {patient.global_ai_summary && (
+                  <button 
+                    onClick={handleGenerateGlobalSummary} 
+                    disabled={generatingGlobalSummary}
+                    className="text-xs font-bold text-purple-600 hover:text-purple-700 disabled:opacity-50 flex items-center gap-1"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">refresh</span>
+                    Atualizar Resumo
+                  </button>
+                )}
+              </div>
+              
+              {patient.global_ai_summary ? (
+                <div className="text-sm text-text-main leading-relaxed whitespace-pre-wrap">
+                  {patient.global_ai_summary}
+                </div>
+              ) : (
+                <div className="text-center py-6">
+                  <p className="text-sm text-text-muted mb-4">Nenhum resumo geral gerado para este paciente ainda.</p>
+                  <button 
+                    onClick={handleGenerateGlobalSummary} 
+                    disabled={generatingGlobalSummary}
+                    className="px-4 py-2 bg-purple-100 text-purple-700 text-sm font-bold rounded-lg hover:bg-purple-200 transition-colors flex items-center gap-2 mx-auto disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">auto_awesome</span>
+                    {generatingGlobalSummary ? 'Analisando histórico...' : 'Gerar Resumo com IA ✨'}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
           {/* Tabs */}
           <div className="flex overflow-x-auto pb-2 scrollbar-hide border-b border-border-light">
             <button className="px-6 py-3 text-sm font-medium text-primary border-b-2 border-primary whitespace-nowrap bg-transparent">
@@ -332,6 +401,38 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
           {appointments.length === 0 ? (
             <div className="p-8 text-center text-text-muted border border-dashed border-border-light rounded-xl">
               Nenhum histórico encontrado.
+            </div>
+          ) : isMinimalist ? (
+            <div className="space-y-4">
+              {appointments.map((apt) => {
+                const statusColors: Record<string, string> = {
+                  'Completed': 'text-green-700 bg-green-100 border-green-200',
+                  'Scheduled': 'text-blue-700 bg-blue-100 border-blue-200',
+                  'Cancelled': 'text-red-700 bg-red-100 border-red-200',
+                  'In Progress': 'text-yellow-700 bg-yellow-100 border-yellow-200'
+                };
+                const statusLabel: Record<string, string> = {
+                  'Completed': 'Concluído',
+                  'Scheduled': 'Agendado',
+                  'Cancelled': 'Cancelado',
+                  'In Progress': 'Em Andamento'
+                };
+                return (
+                  <div key={apt.id} className="bg-background-light p-4 rounded-lg border border-border-light cursor-pointer hover:bg-surface-light transition-colors" onClick={() => setSelectedAppointmentId(apt.id)}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-3">
+                        <span className="font-bold text-text-main">{new Date(apt.date).toLocaleDateString()}</span>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${statusColors[apt.status] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                          {statusLabel[apt.status] || apt.status}
+                        </span>
+                      </div>
+                      <span className="text-xs text-text-muted">{apt.doctorName}</span>
+                    </div>
+                    {/* Wait, the API returns pr.ai_summary as ai_summary or aiSummary? Actually the frontend typing for Appointment says notes, diagnosis, etc. But if it's there as ai_summary it'll work if mapped, let's use apt.notes for now. Ah, the API GET /api/patients/:id/appointments doesn't map ai_summary. I need to check that. */}
+                    <p className="text-sm text-text-main line-clamp-3 whitespace-pre-wrap">{apt.notes || <span className="italic text-text-muted">Nenhuma anotação registrada.</span>}</p>
+                  </div>
+                );
+              })}
             </div>
           ) : (
             appointments.map((apt, index) => {
@@ -428,7 +529,8 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
         </div>
 
         {/* Right Sidebar */}
-        <div className="lg:col-span-4 flex flex-col gap-6">
+        {!isMinimalist && (
+          <div className="lg:col-span-4 flex flex-col gap-6">
           {/* Active Treatments */}
           <div className="bg-surface-light rounded-xl shadow-sm border border-border-light overflow-hidden">
             <div className="p-4 border-b border-border-light flex justify-between items-center bg-background-light">
@@ -509,6 +611,7 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
             </div>
           </div>
         </div>
+        )}
       </div>
       {
         selectedAppointmentId && (

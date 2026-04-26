@@ -155,9 +155,9 @@ app.get('/api/patients/:id', async (req, res) => {
         } else {
             res.status(404).json({ success: false, message: 'Patient not found' });
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error('Get patient error:', error);
-        res.status(500).json({ success: false, message: 'Internal server error' });
+        res.status(500).json({ success: false, message: 'Internal server error', error: error.message });
     }
 });
 
@@ -338,6 +338,98 @@ app.post('/api/appointments/:id/summary', async (req, res) => {
         res.json({ success: true, summary: summaryText });
     } catch (error) {
         console.error('Gemini Summary Error:', error);
+        res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+});
+
+// Generate Global AI Summary for a Patient
+app.post('/api/patients/:id/summary', async (req, res) => {
+    const { id } = req.params;
+    const apiKey = process.env.GEMINI_API_KEY;
+
+    if (!apiKey) {
+        return res.status(400).json({ success: false, message: 'GEMINI_API_KEY não configurada no servidor.' });
+    }
+
+    try {
+        // Fetch patient details
+        const patientRes = await query(`SELECT name, EXTRACT(YEAR FROM AGE(dob)) as age, conditions FROM patients WHERE id = $1`, [id]);
+        if (patientRes.rows.length === 0) {
+            return res.status(404).json({ success: false, message: 'Paciente não encontrado' });
+        }
+        const patient = patientRes.rows[0];
+
+        // Fetch all appointments
+        const aptRes = await query(
+            `SELECT a.date, a.reason, pr.diagnosis, pr.ai_summary 
+             FROM appointments a 
+             LEFT JOIN prescriptions pr ON a.id = pr.appointment_id 
+             WHERE a.patient_id = $1 
+             ORDER BY a.date ASC`,
+            [id]
+        );
+
+        if (aptRes.rows.length === 0) {
+            return res.json({ success: false, message: 'Nenhuma consulta encontrada para este paciente.' });
+        }
+
+        // Build a massive text dump of all history
+        let historyText = `Histórico de Consultas:\n\n`;
+        for (const apt of aptRes.rows) {
+            const dateStr = new Date(apt.date).toLocaleDateString('pt-BR');
+            historyText += `- Data: ${dateStr}\n`;
+            historyText += `  Motivo: ${apt.reason || 'N/A'}\n`;
+            if (apt.ai_summary) {
+                historyText += `  Resumo IA: ${apt.ai_summary}\n`;
+            } else if (apt.diagnosis) {
+                // Limit to 500 chars to avoid prompt getting too massive
+                historyText += `  Anotações: ${apt.diagnosis.substring(0, 500)}...\n`;
+            }
+            historyText += `\n`;
+        }
+
+        const prompt = `Você é um assistente médico especialista analisando o histórico clínico completo de um paciente.
+Dados do Paciente:
+- Nome: ${patient.name}
+- Idade: ${patient.age}
+- Condições Crônicas Conhecidas: ${patient.conditions || 'Nenhuma informada'}
+
+Abaixo está o histórico de todas as consultas dele:
+${historyText}
+
+Por favor, elabore um "Resumo Geral de Saúde" em texto corrido (2 a 4 parágrafos) descrevendo a trajetória de saúde do paciente, as principais queixas recorrentes, como ele tem evoluído e quaisquer pontos de atenção críticos. Seja profissional, objetivo e médico. Não use markdown, retorne apenas o texto puro.`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                systemInstruction: { parts: [{ text: "Você é um assistente médico sênior." }] }
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+            console.error('Gemini API Error:', data.error);
+            return res.status(500).json({ success: false, message: 'Erro na API do Gemini' });
+        }
+
+        const summaryText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+        
+        if (!summaryText) {
+             return res.status(500).json({ success: false, message: 'A IA não retornou um resumo válido.' });
+        }
+
+        // Save to patients table
+        await query(
+            'UPDATE patients SET global_ai_summary = $1 WHERE id = $2',
+            [summaryText, id]
+        );
+
+        res.json({ success: true, summary: summaryText });
+    } catch (error) {
+        console.error('Gemini Global Summary Error:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
 });
@@ -683,8 +775,9 @@ const ensureObitoStatus = async () => {
         if (res.rows.length === 0) {
             await pool.query("INSERT INTO patient_statuses (label) VALUES ('Óbito')");
         }
-        // Auto-add ai_summary if missing
+        // Auto-add columns if missing
         await pool.query("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS ai_summary TEXT");
+        await pool.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS global_ai_summary TEXT");
     } catch (err) {
         console.error("Failed to ensure DB state", err);
     }
