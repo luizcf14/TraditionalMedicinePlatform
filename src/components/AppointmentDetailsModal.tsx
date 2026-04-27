@@ -71,11 +71,11 @@ const AppointmentDetailsModal: React.FC<{
                         {/* Status Badge */}
                         <div className="flex items-center gap-2">
                             <span className="text-sm font-semibold text-text-muted">Status:</span>
-                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${details!.appointment.status === 'Concluida' ? 'bg-green-100 text-green-700' :
+                            <span className={`px-2 py-1 rounded-full text-xs font-bold ${(details!.appointment.status === 'Concluida' || details!.appointment.status === 'Completed') ? 'bg-green-100 text-green-700' :
                                 details!.appointment.status === 'Cancelada' ? 'bg-red-100 text-red-700' :
                                     'bg-blue-100 text-blue-700'
                                 }`}>
-                                {details!.appointment.status}
+                                {details!.appointment.status === 'Completed' ? 'Concluida' : details!.appointment.status}
                             </span>
                         </div>
 

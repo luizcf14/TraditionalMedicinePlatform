@@ -142,7 +142,8 @@ app.get('/api/patients/:id', async (req, res) => {
                 p.allergies,
                 p.conditions,
                 p.blood_type as "bloodType",
-                p.indigenous_name as "indigenousName"
+                p.indigenous_name as "indigenousName",
+                p.is_indigenous as "isIndigenous"
             FROM patients p
             LEFT JOIN patient_statuses ps ON p.status_id = ps.id
             WHERE p.id = $1
@@ -179,6 +180,9 @@ app.get('/api/patients/:id/appointments', async (req, res) => {
                 pr.diagnosis,
                 pr.ai_summary as "aiSummary",
                 pr.id as "prescriptionId",
+                a.is_external as "isExternal",
+                a.external_crm as "externalCrm",
+                a.attachment_url as "attachmentUrl",
                 (
                     SELECT json_agg(json_build_object('name', pi.name, 'dosage', pi.dosage, 'frequency', pi.frequency, 'type', pi.type))
                     FROM prescription_items pi
@@ -201,12 +205,12 @@ app.get('/api/patients/:id/appointments', async (req, res) => {
 
 // Create Appointment Route
 app.post('/api/appointments', async (req, res) => {
-    const { patientId, doctorId, reason, notes, status, date } = req.body;
+    const { patientId, doctorId, reason, notes, status, date, isExternal, externalCrm } = req.body;
 
     try {
-        // For MVP, if doctorId is missing, default to the seed user
+        // For MVP, if doctorId is missing and it's not external, default to the seed user
         let finalDoctorId = doctorId;
-        if (!finalDoctorId) {
+        if (!finalDoctorId && !isExternal) {
             const userRes = await query("SELECT id FROM users WHERE email = 'luizcf14@gmail.com' LIMIT 1");
             if (userRes.rows.length > 0) {
                 finalDoctorId = userRes.rows[0].id;
@@ -214,8 +218,8 @@ app.post('/api/appointments', async (req, res) => {
         }
 
         const text = `
-            INSERT INTO appointments (patient_id, doctor_id, date, reason, notes, status)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO appointments (patient_id, doctor_id, date, reason, notes, status, is_external, external_crm, attachment_url)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING id
         `;
         // Use provided date. If it's just a YYYY-MM-DD string, force Noon to prevent timezone shifts.
@@ -231,7 +235,17 @@ app.post('/api/appointments', async (req, res) => {
             appointmentDate = new Date();
         }
 
-        const values = [patientId, finalDoctorId, appointmentDate, reason || 'Consulta Inicial', notes || '', status || 'Agendada'];
+        const values = [
+            patientId, 
+            isExternal ? null : finalDoctorId, 
+            appointmentDate, 
+            reason || 'Consulta Inicial', 
+            notes || '', 
+            status || (isExternal ? 'Concluida' : 'Agendada'),
+            isExternal || false,
+            externalCrm || null,
+            req.body.attachmentUrl || null
+        ];
 
         const result = await query(text, values);
         res.json({ success: true, appointmentId: result.rows[0].id });
@@ -643,11 +657,11 @@ app.get('/api/appointments/:id/details', async (req, res) => {
 
 
 app.post('/api/patients', async (req, res) => {
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, email, uf, city, address } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, email, uf, city, address, isIndigenous } = req.body;
 
     // Basic validation
-    if (!name || !village) {
-        res.status(400).json({ success: false, message: 'Nome e Aldeia são obrigatórios.' });
+    if (!name) {
+        res.status(400).json({ success: false, message: 'Nome é obrigatório.' });
         return;
     }
 
@@ -669,11 +683,11 @@ app.post('/api/patients', async (req, res) => {
         const imageUrl = image || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=random`;
 
         const text = `
-            INSERT INTO patients (name, dob, village, ethnicity, cns, mother_name, status_id, image_url, indigenous_name, cpf, blood_type, allergies, conditions, email, uf, city, address)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+            INSERT INTO patients (name, dob, village, ethnicity, cns, mother_name, status_id, image_url, indigenous_name, cpf, blood_type, allergies, conditions, email, uf, city, address, is_indigenous)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
             RETURNING id
         `;
-        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, statusId, imageUrl, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, email || null, uf || null, city || null, address || null];
+        const values = [name, dob || null, village || 'N/A', ethnicity || null, cns || null, motherName || null, statusId, imageUrl, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, email || null, uf || null, city || null, address || null, isIndigenous !== false];
 
         const result = await query(text, values);
         res.json({ success: true, patientId: result.rows[0].id });
@@ -686,15 +700,15 @@ app.post('/api/patients', async (req, res) => {
 
 app.put('/api/patients/:id', async (req, res) => {
     const { id } = req.params;
-    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, statusOverride, email, uf, city, address } = req.body;
+    const { name, dob, village, ethnicity, cns, cpf, motherName, indigenousName, bloodType, allergies, conditions, image, statusOverride, email, uf, city, address, isIndigenous } = req.body;
 
     try {
         let text = `
             UPDATE patients 
-            SET name = $1, dob = $2, village = $3, ethnicity = $4, cns = $5, mother_name = $6, indigenous_name = $7, cpf = $8, blood_type = $9, allergies = $10, conditions = $11, email = $12, uf = $13, city = $14, address = $15, updated_at = NOW()
+            SET name = $1, dob = $2, village = $3, ethnicity = $4, cns = $5, mother_name = $6, indigenous_name = $7, cpf = $8, blood_type = $9, allergies = $10, conditions = $11, email = $12, uf = $13, city = $14, address = $15, is_indigenous = $16, updated_at = NOW()
         `;
-        const values = [name, dob || null, village, ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, email || null, uf || null, city || null, address || null];
-        let paramIndex = 16;
+        const values = [name, dob || null, village || 'N/A', ethnicity || null, cns || null, motherName || null, indigenousName || null, cpf || null, bloodType || null, allergies || null, conditions || null, email || null, uf || null, city || null, address || null, isIndigenous !== false];
+        let paramIndex = 17;
 
         if (image) {
             text += `, image_url = $${paramIndex}`;
@@ -778,6 +792,10 @@ const ensureObitoStatus = async () => {
         // Auto-add columns if missing
         await pool.query("ALTER TABLE prescriptions ADD COLUMN IF NOT EXISTS ai_summary TEXT");
         await pool.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS global_ai_summary TEXT");
+        await pool.query("ALTER TABLE patients ADD COLUMN IF NOT EXISTS is_indigenous BOOLEAN DEFAULT true");
+        await pool.query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS is_external BOOLEAN DEFAULT false");
+        await pool.query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS external_crm VARCHAR(255)");
+        await pool.query("ALTER TABLE appointments ADD COLUMN IF NOT EXISTS attachment_url TEXT");
     } catch (err) {
         console.error("Failed to ensure DB state", err);
     }

@@ -14,6 +14,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
     dob: '',
     sex: '',
     genderIdentity: '',
+    isIndigenous: true,
     indigenousName: '',
     ethnicity: '',
     village: '',
@@ -78,6 +79,7 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
               cns: p.cns || '',
               cpf: p.cpf || '',
               motherName: p.motherName || '',
+              isIndigenous: p.isIndigenous !== false,
               indigenousName: p.indigenousName || '',
               bloodType: p.bloodType || '',
               allergies: p.allergies || '',
@@ -96,8 +98,13 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
   }, [patientId]);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>) => {
-    const { name, value } = e.target;
-    setFormData(prev => ({ ...prev, [name]: value }));
+    const { name, value, type } = e.target;
+    if (type === 'checkbox') {
+      const checked = (e.target as HTMLInputElement).checked;
+      setFormData(prev => ({ ...prev, [name]: checked }));
+    } else {
+      setFormData(prev => ({ ...prev, [name]: value }));
+    }
   };
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -167,8 +174,8 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
   }, [stream]);
 
   const handleSave = async () => {
-    if (!formData.name || !formData.village || !formData.email || !formData.uf || !formData.city || !formData.address) {
-      alert('Por favor, preencha todos os campos obrigatórios (Nome, Aldeia, Email, UF, Cidade, Endereço).');
+    if (!formData.name || (formData.isIndigenous && !formData.village) || !formData.email || !formData.uf || !formData.city || !formData.address) {
+      alert('Por favor, preencha todos os campos obrigatórios.');
       return;
     }
 
@@ -181,12 +188,13 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
         city: formData.city,
         address: formData.address,
         dob: formData.dob || null,
-        village: formData.village,
-        ethnicity: formData.ethnicity,
+        isIndigenous: formData.isIndigenous,
+        village: formData.isIndigenous ? formData.village : 'N/A',
+        ethnicity: formData.isIndigenous ? formData.ethnicity : null,
         cns: formData.cns,
         cpf: formData.cpf,
         motherName: formData.motherName || 'Não Informado',
-        indigenousName: formData.indigenousName,
+        indigenousName: formData.isIndigenous ? formData.indigenousName : null,
         bloodType: formData.bloodType,
         allergies: formData.allergies,
         conditions: formData.conditions,
@@ -426,11 +434,23 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
           {/* Section: Cultural Context */}
           <section className="bg-white rounded-xl border border-border-light p-6 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 right-0 w-32 h-32 bg-primary/5 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none"></div>
-            <div className="flex items-center gap-2 mb-6 border-b border-border-light pb-4 relative z-10">
-              <span className="material-symbols-outlined text-primary">groups</span>
-              <h3 className="text-lg font-bold text-text-main">Identidade & Contexto Cultural</h3>
+            <div className="flex items-center justify-between mb-6 border-b border-border-light pb-4 relative z-10">
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-primary">groups</span>
+                <h3 className="text-lg font-bold text-text-main">Identidade & Contexto Cultural</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-sm font-medium text-text-main cursor-pointer" htmlFor="isIndigenous">
+                  Paciente Indígena?
+                </label>
+                <div className="relative inline-block w-12 mr-2 align-middle select-none transition duration-200 ease-in">
+                  <input type="checkbox" name="isIndigenous" id="isIndigenous" checked={formData.isIndigenous} onChange={handleChange} className="toggle-checkbox absolute block w-6 h-6 rounded-full bg-white border-4 appearance-none cursor-pointer" style={{ top: '2px', left: formData.isIndigenous ? '26px' : '2px', transition: 'left 0.2s', borderColor: formData.isIndigenous ? '#8B5CF6' : '#E5E7EB' }}/>
+                  <label htmlFor="isIndigenous" className="toggle-label block overflow-hidden h-7 rounded-full bg-gray-300 cursor-pointer" style={{ backgroundColor: formData.isIndigenous ? '#8B5CF6' : '#E5E7EB' }}></label>
+                </div>
+              </div>
             </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+            {formData.isIndigenous && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10 animate-fade-in">
               <div className="md:col-span-2">
                 <label className="block text-sm font-medium text-text-main mb-2">Nome Indígena (Língua Materna)</label>
                 <input
@@ -463,7 +483,8 @@ const RegistrationScreen: React.FC<RegistrationScreenProps> = ({ onNavigate, pat
                   <option value="Médio Rio Purus">Médio Rio Purus</option>
                 </select>
               </div>
-            </div>
+              </div>
+            )}
           </section>
 
           {/* Section: Contact Info (Mandatory) */}

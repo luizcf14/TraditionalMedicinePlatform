@@ -562,7 +562,7 @@ const PrescriptionScreen: React.FC<PrescriptionScreenProps> = ({ onNavigate, pat
                 <div className="mb-4">
                   <h2 className="text-lg font-bold mb-2 uppercase tracking-wide border-l-4 border-red-500 pl-2">Anotações / Diagnóstico</h2>
                   {diagnosis && (
-                    <div className="bg-red-50 p-3 rounded text-sm text-gray-800 border border-red-100 italic mb-2">
+                    <div className="bg-red-50 p-3 rounded text-sm text-gray-800 border border-red-100 italic mb-2 whitespace-pre-wrap">
                       {diagnosis}
                     </div>
                   )}

@@ -62,7 +62,7 @@ const AgendaScreen: React.FC<AgendaScreenProps> = ({ onNavigate }) => {
 
         // Empty cells for previous month
         for (let i = 0; i < firstDay; i++) {
-            days.push(<div key={`empty-${i}`} className="h-32 bg-background-light/30 border border-border-light/50"></div>);
+            days.push(<div key={`empty-${i}`} className="min-h-[100px] sm:min-h-[120px] bg-background-light/30 border border-border-light/50"></div>);
         }
 
         // Days of current month
@@ -77,7 +77,7 @@ const AgendaScreen: React.FC<AgendaScreenProps> = ({ onNavigate }) => {
             const isToday = today.getDate() === day && today.getMonth() === month && today.getFullYear() === year;
 
             days.push(
-                <div key={day} className={`h-32 border border-border-light p-2 overflow-y-auto ${isToday ? 'bg-primary/5' : 'bg-white'}`}>
+                <div key={day} className={`min-h-[100px] sm:min-h-[120px] border border-border-light p-2 overflow-y-auto ${isToday ? 'bg-primary/5' : 'bg-white'}`}>
                     <div className="flex justify-between items-start mb-1">
                         <span className={`text-sm font-semibold h-7 w-7 flex items-center justify-center rounded-full ${isToday ? 'bg-primary text-white' : 'text-text-main'}`}>{day}</span>
                         {dayAppointments.length > 0 && <span className="text-[10px] bg-gray-100 text-text-muted px-1.5 py-0.5 rounded">{dayAppointments.length}</span>}
@@ -87,7 +87,7 @@ const AgendaScreen: React.FC<AgendaScreenProps> = ({ onNavigate }) => {
                             <button
                                 key={apt.id}
                                 onClick={() => setSelectedAppointmentId(apt.id)}
-                                className={`text-left text-[10px] p-1.5 rounded border border-l-4 truncate transition-all hover:scale-[1.02] ${apt.status === 'Concluida' ? 'bg-green-50 border-green-200 border-l-green-500 text-green-800' :
+                                className={`text-left text-[10px] p-1.5 rounded border border-l-4 truncate transition-all hover:scale-[1.02] ${(apt.status === 'Concluida' || apt.status === 'Completed') ? 'bg-green-50 border-green-200 border-l-green-500 text-green-800' :
                                     apt.status === 'Cancelada' ? 'bg-red-50 border-red-200 border-l-red-500 text-red-800' :
                                         'bg-blue-50 border-blue-200 border-l-blue-500 text-blue-800'
                                     }`}
@@ -128,23 +128,27 @@ const AgendaScreen: React.FC<AgendaScreenProps> = ({ onNavigate }) => {
                 </div>
             </div>
 
-            <div className="bg-white rounded-xl shadow-sm border border-border-light overflow-hidden flex-1 flex flex-col">
-                {/* Week Days Header */}
-                <div className="grid grid-cols-7 border-b border-border-light bg-background-light">
-                    {weekDays.map(day => (
-                        <div key={day} className="py-3 text-center text-xs font-bold uppercase tracking-wider text-text-muted">
-                            {day}
+            <div className="bg-white rounded-xl shadow-sm border border-border-light flex-1 flex flex-col overflow-hidden">
+                <div className="overflow-x-auto flex-1">
+                    <div className="min-w-[700px] h-full flex flex-col">
+                        {/* Week Days Header */}
+                        <div className="grid grid-cols-7 border-b border-border-light bg-background-light">
+                            {weekDays.map(day => (
+                                <div key={day} className="py-3 text-center text-xs font-bold uppercase tracking-wider text-text-muted">
+                                    {day}
+                                </div>
+                            ))}
                         </div>
-                    ))}
-                </div>
 
-                {/* Calendar Grid */}
-                <div className="grid grid-cols-7 flex-1 auto-rows-fr">
-                    {loading ? (
-                        <div className="col-span-7 flex items-center justify-center p-20">
-                            <span className="material-symbols-outlined animate-spin text-4xl text-primary">progress_activity</span>
+                        {/* Calendar Grid */}
+                        <div className="grid grid-cols-7 flex-1 auto-rows-fr">
+                            {loading ? (
+                                <div className="col-span-7 flex items-center justify-center p-20">
+                                    <span className="material-symbols-outlined animate-spin text-4xl text-primary">progress_activity</span>
+                                </div>
+                            ) : renderCalendar()}
                         </div>
-                    ) : renderCalendar()}
+                    </div>
                 </div>
             </div>
 

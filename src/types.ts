@@ -42,6 +42,7 @@ export interface Patient {
   city?: string;
   address?: string;
   global_ai_summary?: string;
+  isIndigenous?: boolean;
 }
 
 export interface Appointment {
@@ -55,6 +56,9 @@ export interface Appointment {
   status: 'Agendada' | 'Concluida' | 'Cancelada';
   prescriptionId?: string;
   prescriptionItems?: PrescriptionItem[];
+  isExternal?: boolean;
+  externalCrm?: string;
+  attachmentUrl?: string;
 }
 
 export interface PrescriptionItem {

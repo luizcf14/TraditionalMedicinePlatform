@@ -4,6 +4,7 @@ import PrescriptionDocument from '../components/PrescriptionDocument';
 import PatientSummaryDocument from '../components/PatientSummaryDocument';
 import GrowthCharts from '../components/GrowthCharts';
 import GrowthMeasurementModal from '../components/GrowthMeasurementModal';
+import ExternalEventModal from '../components/ExternalEventModal';
 import { apiFetch } from '../services/api';
 import { GrowthRecord } from '../types';
 
@@ -90,7 +91,19 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
   // Growth State
   const [growthRecords, setGrowthRecords] = useState<GrowthRecord[]>([]);
   const [showGrowthModal, setShowGrowthModal] = useState(false);
+  const [showExternalEventModal, setShowExternalEventModal] = useState(false);
+  const [previewDocumentUrl, setPreviewDocumentUrl] = useState<string | null>(null);
   const [isChild, setIsChild] = useState(false);
+
+  const refreshAppointments = async () => {
+    try {
+      const historyRes = await apiFetch(`/api/patients/${patientId}/appointments`);
+      const historyData = await historyRes.json();
+      if (historyData.success) setAppointments(historyData.appointments);
+    } catch (e) {
+      console.error(e);
+    }
+  };
   const childAgeLimit = Number(import.meta.env.VITE_CHILD_AGE_LIMIT) || 18;
 
   const fetchGrowthRecords = () => {
@@ -240,7 +253,10 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
             <div>
               <div className="flex items-center gap-3 mb-1">
                 <h1 className="text-2xl font-bold text-text-main">{patient.name}</h1>
-                <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-medium border border-green-200">Ativo</span>
+                {patient.isIndigenous && (
+                  <span className="bg-green-100 text-green-700 text-xs px-2 py-1 rounded-full font-medium border border-green-200">Indígena</span>
+                )}
+                <span className="bg-blue-100 text-blue-700 text-xs px-2 py-1 rounded-full font-medium border border-blue-200">Ativo</span>
               </div>
               <div className="flex flex-wrap gap-4 text-sm text-text-muted">
                 <div className="flex items-center gap-1">
@@ -385,16 +401,20 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
           </div>
 
           {/* Filter */}
-          <div className="flex gap-3 mb-2">
-            <div className="relative flex-1">
-              <span className="material-symbols-outlined absolute left-3 top-2.5 text-text-muted text-lg">filter_list</span>
-              <input className="w-full bg-surface-light border border-border-light rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary focus:border-primary" placeholder="Filtrar por data, sintoma ou especialista..." type="text" />
+          <div className="flex flex-col sm:flex-row gap-3 mb-2 justify-between">
+            <div className="flex gap-3 flex-1">
+              <div className="relative flex-1">
+                <span className="material-symbols-outlined absolute left-3 top-2.5 text-text-muted text-lg">filter_list</span>
+                <input className="w-full bg-surface-light border border-border-light rounded-lg py-2 pl-10 pr-4 text-sm focus:ring-1 focus:ring-primary focus:border-primary" placeholder="Filtrar por data, sintoma ou especialista..." type="text" />
+              </div>
             </div>
-            <select className="bg-surface-light border border-border-light rounded-lg py-2 px-3 text-sm focus:ring-1 focus:ring-primary focus:border-primary">
-              <option>Todos os tipos</option>
-              <option>Consultas</option>
-              <option>Procedimentos</option>
-            </select>
+            <button
+              onClick={() => setShowExternalEventModal(true)}
+              className="px-4 py-2 bg-white border border-border-light text-text-main rounded-lg text-sm font-medium hover:bg-background-light transition-colors flex items-center gap-2 shrink-0 shadow-sm"
+            >
+              <span className="material-symbols-outlined text-[18px]">add_circle</span>
+              Evento Externo
+            </button>
           </div>
 
           {/* Timeline */}
@@ -422,14 +442,31 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center gap-3">
                         <span className="font-bold text-text-main">{new Date(apt.date).toLocaleDateString()}</span>
-                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${statusColors[apt.status] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
-                          {statusLabel[apt.status] || apt.status}
-                        </span>
+                        {apt.isExternal ? (
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded border text-purple-700 bg-purple-100 border-purple-200">
+                            Externo
+                          </span>
+                        ) : (
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded border ${statusColors[apt.status] || 'bg-gray-100 text-gray-700 border-gray-200'}`}>
+                            {statusLabel[apt.status] || apt.status}
+                          </span>
+                        )}
                       </div>
-                      <span className="text-xs text-text-muted">{apt.doctorName}</span>
+                      <span className="text-xs text-text-muted">{apt.doctorName} {apt.externalCrm && `(${apt.externalCrm})`}</span>
                     </div>
                     {/* Wait, the API returns pr.ai_summary as ai_summary or aiSummary? Actually the frontend typing for Appointment says notes, diagnosis, etc. But if it's there as ai_summary it'll work if mapped, let's use apt.notes for now. Ah, the API GET /api/patients/:id/appointments doesn't map ai_summary. I need to check that. */}
                     <p className="text-sm text-text-main line-clamp-3 whitespace-pre-wrap">{apt.notes || <span className="italic text-text-muted">Nenhuma anotação registrada.</span>}</p>
+                    {apt.attachmentUrl && (
+                      <div className="mt-3" onClick={(e) => e.stopPropagation()}>
+                        <button 
+                          onClick={() => setPreviewDocumentUrl(apt.attachmentUrl!)}
+                          className="inline-flex items-center gap-2 text-xs font-bold text-primary hover:underline bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/20"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">attachment</span>
+                          Ver Documento Anexado
+                        </button>
+                      </div>
+                    )}
                   </div>
                 );
               })}
@@ -461,20 +498,37 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-center gap-3">
                         <span className={`p-2 rounded-lg material-symbols-outlined ${isPast ? 'bg-gray-100 text-gray-600' : 'bg-primary/10 text-primary'}`}>
-                          {apt.reason?.includes('Consulta') ? 'psychiatry' : 'stethoscope'}
+                          {apt.isExternal ? 'domain' : (apt.reason?.includes('Consulta') ? 'psychiatry' : 'stethoscope')}
                         </span>
                         <div>
                           <h3 className="font-bold text-lg text-text-main group-hover:text-primary transition-colors">{apt.reason || 'Consulta'}</h3>
                           <p className="text-sm text-text-muted">
-                            {new Date(apt.date).toLocaleString('pt-BR')} • {apt.doctorName || 'Profissional'}
+                            {new Date(apt.date).toLocaleString('pt-BR')} • {apt.doctorName || 'Profissional'} {apt.externalCrm && `(${apt.externalCrm})`}
                           </p>
                         </div>
                       </div>
-                      <span className={`text-xs font-semibold px-2.5 py-0.5 rounded border ${statusColors[apt.status] || 'bg-gray-100'}`}>
-                        {statusLabel[apt.status] || apt.status}
-                      </span>
+                      {apt.isExternal ? (
+                        <span className="text-xs font-semibold px-2.5 py-0.5 rounded border text-purple-800 bg-purple-100 border-purple-200">
+                          Externo
+                        </span>
+                      ) : (
+                        <span className={`text-xs font-semibold px-2.5 py-0.5 rounded border ${statusColors[apt.status] || 'bg-gray-100'}`}>
+                          {statusLabel[apt.status] || apt.status}
+                        </span>
+                      )}
                     </div>
                     <p className="text-text-main text-sm mb-4">{apt.notes}</p>
+                    {apt.attachmentUrl && (
+                      <div className="mt-3 mb-4" onClick={(e) => e.stopPropagation()}>
+                        <button 
+                          onClick={() => setPreviewDocumentUrl(apt.attachmentUrl!)}
+                          className="inline-flex items-center gap-2 text-xs font-bold text-primary hover:underline bg-primary/5 px-3 py-1.5 rounded-lg border border-primary/20"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">attachment</span>
+                          Ver Documento Anexado
+                        </button>
+                      </div>
+                    )}
 
                     {/* Actions */}
                     {apt.prescriptionId && (
@@ -674,12 +728,41 @@ const PatientRecordScreen: React.FC<PatientRecordScreenProps> = ({ onNavigate, p
         )
       }
 
+      {showExternalEventModal && patient && (
+        <ExternalEventModal 
+          patientId={patient.id}
+          onClose={() => setShowExternalEventModal(false)}
+          onSuccess={() => {
+            setShowExternalEventModal(false);
+            refreshAppointments();
+          }}
+        />
+      )}
+
       {showGrowthModal && patient && (
         <GrowthMeasurementModal
           patientId={patient.id}
           onClose={() => setShowGrowthModal(false)}
           onSuccess={fetchGrowthRecords}
         />
+      )}
+
+      {/* Document Preview Modal */}
+      {previewDocumentUrl && (
+        <div className="fixed inset-0 bg-black/80 z-[100] flex flex-col items-center justify-center p-4 animate-fade-in">
+          <div className="w-full flex justify-end max-w-4xl mb-4">
+            <button onClick={() => setPreviewDocumentUrl(null)} className="text-white hover:text-gray-300 transition-colors">
+              <span className="material-symbols-outlined text-4xl">close</span>
+            </button>
+          </div>
+          <div className="w-full max-w-4xl bg-white rounded-lg overflow-hidden flex items-center justify-center min-h-[50vh] animate-slide-up relative">
+            {previewDocumentUrl.startsWith('data:application/pdf') ? (
+              <iframe src={previewDocumentUrl} className="w-full h-[80vh]" title="Document Preview" />
+            ) : (
+              <img src={previewDocumentUrl} alt="Document Preview" className="max-w-full max-h-[80vh] object-contain" />
+            )}
+          </div>
+        </div>
       )}
     </div >
   );
