@@ -11,7 +11,8 @@
     "start": "node dist/server/index.js",
     "preview": "vite preview",
     "server": "tsx watch src/server/index.ts",
-    "migrate": "tsx src/server/migrate.ts"
+    "migrate": "tsx src/server/migrate.ts",
+    "client": "vite"
   },
   "dependencies": {
     "cors": "^2.8.5",

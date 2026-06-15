@@ -9,8 +9,8 @@
 
 **Run:**
  (migrations) -> `npm run migrate`
- (front + db) -> `npm run dev` (starts both the vite frontend and postgres container, and stops postgres when exited)
- (back) -> `npm run server`
+ (front + db) -> `npm run dev` | `npm run client` (starts both the vite frontend and postgres container, and stops postgres when exited)
+ (back) -> `npm run server` 
 
 **Build:**
  `npm run build` (Builds both client and server)

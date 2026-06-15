@@ -48,7 +48,7 @@ app.post('/api/login', async (req, res) => {
         } else {
             res.status(401).json({ success: false, message: 'Invalid credentials' });
         }
-    } catch (error) {
+    } catch (error: any) {
         console.error('Login error:', error);
         res.status(500).json({ success: false, message: 'Internal server error' });
     }
@@ -236,11 +236,11 @@ app.post('/api/appointments', async (req, res) => {
         }
 
         const values = [
-            patientId, 
-            isExternal ? null : finalDoctorId, 
-            appointmentDate, 
-            reason || 'Consulta Inicial', 
-            notes || '', 
+            patientId,
+            isExternal ? null : finalDoctorId,
+            appointmentDate,
+            reason || 'Consulta Inicial',
+            notes || '',
             status || (isExternal ? 'Concluida' : 'Agendada'),
             isExternal || false,
             externalCrm || null,
@@ -331,16 +331,16 @@ app.post('/api/appointments/:id/summary', async (req, res) => {
         });
 
         const data = await response.json();
-        
+
         if (data.error) {
             console.error('Gemini API Error:', data.error);
             return res.status(500).json({ success: false, message: 'Erro na API do Gemini' });
         }
 
         const summaryText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        
+
         if (!summaryText) {
-             return res.status(500).json({ success: false, message: 'A IA não retornou um resumo válido.' });
+            return res.status(500).json({ success: false, message: 'A IA não retornou um resumo válido.' });
         }
 
         // Save to prescriptions table
@@ -423,16 +423,16 @@ Por favor, elabore um "Resumo Geral de Saúde" em texto corrido (2 a 4 parágraf
         });
 
         const data = await response.json();
-        
+
         if (data.error) {
             console.error('Gemini API Error:', data.error);
             return res.status(500).json({ success: false, message: 'Erro na API do Gemini' });
         }
 
         const summaryText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        
+
         if (!summaryText) {
-             return res.status(500).json({ success: false, message: 'A IA não retornou um resumo válido.' });
+            return res.status(500).json({ success: false, message: 'A IA não retornou um resumo válido.' });
         }
 
         // Save to patients table
@@ -1131,21 +1131,21 @@ Anotações: ${text}`;
         });
 
         const data = await response.json();
-        
+
         if (data.error) {
             console.error('Gemini API Error:', data.error);
             return res.status(500).json({ success: false, message: 'Erro na API do Gemini' });
         }
 
         const responseText = data.candidates?.[0]?.content?.parts?.[0]?.text;
-        
+
         if (!responseText) {
-             return res.json({ success: true, codes: [] });
+            return res.json({ success: true, codes: [] });
         }
 
         const cleanedText = responseText.replace(/```json/gi, '').replace(/```/g, '').trim();
         let result = JSON.parse(cleanedText);
-        
+
         if (!Array.isArray(result)) {
             if (result && result.code) {
                 result = [result];
@@ -1153,7 +1153,7 @@ Anotações: ${text}`;
                 result = [];
             }
         }
-        
+
         const validCodes = [];
         for (const item of result) {
             if (item && item.code) {
@@ -1161,7 +1161,7 @@ Anotações: ${text}`;
                     'SELECT code, description FROM icd_10 WHERE code ILIKE $1 OR code ILIKE $2 LIMIT 1',
                     [item.code, `${item.code}%`]
                 );
-                
+
                 if (dbCheck.rows.length > 0) {
                     validCodes.push(dbCheck.rows[0]);
                 }

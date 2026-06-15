@@ -1,4 +1,4 @@
-CREATE TABLE growth_records (
+CREATE TABLE IF NOT EXISTS growth_records (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     patient_id UUID REFERENCES patients(id) ON DELETE CASCADE,
     date DATE NOT NULL DEFAULT CURRENT_DATE,
@@ -9,4 +9,4 @@ CREATE TABLE growth_records (
 );
 
 -- Index for faster retrieval by patient and date
-CREATE INDEX idx_growth_patient_date ON growth_records(patient_id, date);
+CREATE INDEX IF NOT EXISTS idx_growth_patient_date ON growth_records(patient_id, date);
